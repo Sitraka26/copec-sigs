@@ -1,0 +1,226 @@
+// Schéma de base de données - Système de Gestion Scolaire COPEC
+// À ajuster une fois les réponses de l'école obtenues (voir docs/questions-ecole.md)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  DIRECTEUR
+  SECRETAIRE
+  ENSEIGNANT
+  SURVEILLANT
+}
+
+enum Cycle {
+  PRESCOLAIRE
+  PRIMAIRE
+  COLLEGE
+  LYCEE
+}
+
+enum StatutInscription {
+  ACTIVE
+  TRANSFEREE
+  ABANDONNEE
+  DIPLOMEE
+}
+
+enum StatutPresence {
+  PRESENT
+  ABSENT
+  RETARD
+}
+
+enum StatutPaiement {
+  PAYE
+  PARTIEL
+  EN_ATTENTE
+}
+
+model Utilisateur {
+  id           String   @id @default(uuid())
+  nom          String
+  prenom       String
+  email        String   @unique
+  motDePasse   String
+  role         Role
+  actif        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  enseignant   Enseignant?
+}
+
+model AnneeScolaire {
+  id           String    @id @default(uuid())
+  libelle      String    @unique // ex: "2026-2027"
+  dateDebut    DateTime
+  dateFin      DateTime
+  active       Boolean   @default(false)
+
+  inscriptions Inscription[]
+  classes      Classe[]
+  bulletins    Bulletin[]
+}
+
+model Niveau {
+  id      String @id @default(uuid())
+  libelle String // ex: "6ème", "CP", "Terminale"
+  cycle   Cycle
+  ordre   Int    // pour trier (préscolaire=1 ... terminale=13)
+
+  classes Classe[]
+}
+
+model Classe {
+  id                  String   @id @default(uuid())
+  nom                 String   // ex: "6ème A"
+  niveauId            String
+  anneeScolaireId     String
+  enseignantPrincipal String?
+
+  niveau              Niveau         @relation(fields: [niveauId], references: [id])
+  anneeScolaire       AnneeScolaire  @relation(fields: [anneeScolaireId], references: [id])
+  inscriptions        Inscription[]
+  emploiDuTemps       EmploiDuTemps[]
+
+  @@unique([nom, anneeScolaireId])
+}
+
+model Eleve {
+  id               String   @id @default(uuid())
+  matricule        String   @unique
+  nom              String
+  prenom           String
+  dateNaissance    DateTime
+  sexe             String
+  adresse          String?
+  photo            String?
+  contactUrgenceNom   String?
+  contactUrgenceTel   String?
+  informationsSante   String?
+  createdAt        DateTime @default(now())
+
+  inscriptions     Inscription[]
+  notes            Note[]
+  presences        Presence[]
+  paiements        Paiement[]
+  bulletins        Bulletin[]
+}
+
+model Inscription {
+  id              String            @id @default(uuid())
+  eleveId         String
+  classeId        String
+  anneeScolaireId String
+  dateInscription DateTime          @default(now())
+  statut          StatutInscription @default(ACTIVE)
+
+  eleve           Eleve         @relation(fields: [eleveId], references: [id])
+  classe          Classe        @relation(fields: [classeId], references: [id])
+  anneeScolaire   AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+
+  @@unique([eleveId, anneeScolaireId])
+}
+
+model Matiere {
+  id          String @id @default(uuid())
+  nom         String
+  coefficient Float  @default(1)
+
+  notes           Note[]
+  emploiDuTemps   EmploiDuTemps[]
+  enseignants     EnseignantMatiere[]
+}
+
+model Enseignant {
+  id            String @id @default(uuid())
+  utilisateurId String @unique
+  telephone     String?
+
+  utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id])
+  matieres      EnseignantMatiere[]
+  emploiDuTemps EmploiDuTemps[]
+}
+
+model EnseignantMatiere {
+  enseignantId String
+  matiereId    String
+
+  enseignant   Enseignant @relation(fields: [enseignantId], references: [id])
+  matiere      Matiere    @relation(fields: [matiereId], references: [id])
+
+  @@id([enseignantId, matiereId])
+}
+
+model Note {
+  id         String   @id @default(uuid())
+  eleveId    String
+  matiereId  String
+  trimestre  Int      // 1, 2 ou 3
+  valeur     Float
+  date       DateTime @default(now())
+
+  eleve      Eleve   @relation(fields: [eleveId], references: [id])
+  matiere    Matiere @relation(fields: [matiereId], references: [id])
+}
+
+model Bulletin {
+  id               String   @id @default(uuid())
+  eleveId          String
+  anneeScolaireId  String
+  trimestre        Int
+  moyenneGenerale  Float?
+  rang             Int?
+  appreciation     String?
+  genereLe         DateTime @default(now())
+
+  eleve            Eleve         @relation(fields: [eleveId], references: [id])
+  anneeScolaire    AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+
+  @@unique([eleveId, anneeScolaireId, trimestre])
+}
+
+model Presence {
+  id       String         @id @default(uuid())
+  eleveId  String
+  date     DateTime
+  statut   StatutPresence
+  justifie Boolean        @default(false)
+
+  eleve    Eleve @relation(fields: [eleveId], references: [id])
+
+  @@unique([eleveId, date])
+}
+
+model Paiement {
+  id            String         @id @default(uuid())
+  eleveId       String
+  montant       Float
+  typeFrais     String         // "écolage", "cantine", "transport", etc. (à ajuster avec l'école)
+  datePaiement  DateTime       @default(now())
+  moyenPaiement String?
+  statut        StatutPaiement @default(PAYE)
+
+  eleve         Eleve @relation(fields: [eleveId], references: [id])
+}
+
+model EmploiDuTemps {
+  id           String @id @default(uuid())
+  classeId     String
+  matiereId    String
+  enseignantId String
+  jour         Int    // 1=lundi ... 6=samedi
+  heureDebut   String // format "HH:mm"
+  heureFin     String
+
+  classe       Classe     @relation(fields: [classeId], references: [id])
+  matiere      Matiere    @relation(fields: [matiereId], references: [id])
+  enseignant   Enseignant @relation(fields: [enseignantId], references: [id])
+}
