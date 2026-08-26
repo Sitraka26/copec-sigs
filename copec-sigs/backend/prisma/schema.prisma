@@ -14,6 +14,7 @@ enum Role {
   ADMIN
   DIRECTEUR
   SECRETAIRE
+  ECONOME
   ENSEIGNANT
   SURVEILLANT
 }
@@ -44,74 +45,106 @@ enum StatutPaiement {
   EN_ATTENTE
 }
 
-model Utilisateur {
-  id           String   @id @default(uuid())
-  nom          String
-  prenom       String
-  email        String   @unique
-  motDePasse   String
-  role         Role
-  actif        Boolean  @default(true)
-  createdAt    DateTime @default(now())
+/// Un site COPEC (ex: Isaha, Mangabe). Chaque déploiement local
+/// n'aura normalement qu'UNE seule ligne ici (son propre établissement),
+/// mais le modèle permet de centraliser plusieurs sites plus tard
+/// (quand internet sera disponible) sans changer le schéma.
+model Etablissement {
+  id        String  @id @default(uuid())
+  nom       String  // ex: "COPEC Isaha", "COPEC Mangabe"
+  adresse   String?
+  telephone String?
+  email     String?
+  logoUrl   String?
 
-  enseignant   Enseignant?
+  utilisateurs   Utilisateur[]
+  anneesScolaires AnneeScolaire[]
+  eleves         Eleve[]
+  classes        Classe[]
+  matieres       Matiere[]
+}
+
+model Utilisateur {
+  id             String   @id @default(uuid())
+  etablissementId String
+  nom            String
+  prenom         String
+  email          String   @unique
+  motDePasse     String
+  role           Role
+  actif          Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  etablissement  Etablissement @relation(fields: [etablissementId], references: [id])
+  enseignant     Enseignant?
 }
 
 model AnneeScolaire {
-  id           String    @id @default(uuid())
-  libelle      String    @unique // ex: "2026-2027"
-  dateDebut    DateTime
-  dateFin      DateTime
-  active       Boolean   @default(false)
+  id              String    @id @default(uuid())
+  etablissementId String
+  libelle         String    // ex: "2026-2027"
+  dateDebut       DateTime
+  dateFin         DateTime
+  active          Boolean   @default(false)
 
-  inscriptions Inscription[]
-  classes      Classe[]
-  bulletins    Bulletin[]
+  etablissement   Etablissement @relation(fields: [etablissementId], references: [id])
+  inscriptions    Inscription[]
+  classes         Classe[]
+  bulletins       Bulletin[]
+  baremesFrais    BaremeFrais[]
+
+  @@unique([etablissementId, libelle])
 }
 
 model Niveau {
-  id      String @id @default(uuid())
-  libelle String // ex: "6ème", "CP", "Terminale"
+  id      String  @id @default(uuid())
+  libelle String  // ex: "6ème", "CP", "Terminale"
   cycle   Cycle
-  ordre   Int    // pour trier (préscolaire=1 ... terminale=13)
+  filiere String? // ex: "A1", "A2", "D" — uniquement rempli pour les niveaux qui se divisent en séries (ex: Terminale)
+  ordre   Int     // pour trier (préscolaire=1 ... terminale=13)
 
   classes Classe[]
+  baremesFrais BaremeFrais[]
 }
 
 model Classe {
   id                  String   @id @default(uuid())
+  etablissementId     String
   nom                 String   // ex: "6ème A"
   niveauId            String
   anneeScolaireId     String
   enseignantPrincipal String?
 
+  etablissement       Etablissement  @relation(fields: [etablissementId], references: [id])
   niveau              Niveau         @relation(fields: [niveauId], references: [id])
   anneeScolaire       AnneeScolaire  @relation(fields: [anneeScolaireId], references: [id])
   inscriptions        Inscription[]
   emploiDuTemps       EmploiDuTemps[]
 
-  @@unique([nom, anneeScolaireId])
+  @@unique([etablissementId, nom, anneeScolaireId])
 }
 
 model Eleve {
-  id               String   @id @default(uuid())
-  matricule        String   @unique
-  nom              String
-  prenom           String
-  dateNaissance    DateTime
-  sexe             String
-  adresse          String?
-  photo            String?
-  contactUrgenceNom   String?
-  contactUrgenceTel   String?
-  informationsSante   String?
-  createdAt        DateTime @default(now())
+  id                String   @id @default(uuid())
+  etablissementId   String
+  matricule         String   @unique
+  nom               String
+  prenom            String
+  dateNaissance     DateTime
+  sexe              String
+  adresse           String?
+  photo             String?
+  contactUrgenceNom String?
+  contactUrgenceTel String?
+  informationsSante String?
+  createdAt         DateTime @default(now())
 
-  inscriptions     Inscription[]
-  notes            Note[]
-  presences        Presence[]
-  paiements        Paiement[]
-  bulletins        Bulletin[]
+  etablissement     Etablissement @relation(fields: [etablissementId], references: [id])
+  inscriptions      Inscription[]
+  notes             Note[]
+  presences         Presence[]
+  paiements         Paiement[]
+  bulletins         Bulletin[]
 }
 
 model Inscription {
@@ -130,10 +163,12 @@ model Inscription {
 }
 
 model Matiere {
-  id          String @id @default(uuid())
-  nom         String
-  coefficient Float  @default(1)
+  id              String @id @default(uuid())
+  etablissementId String
+  nom             String
+  coefficient     Float  @default(1)
 
+  etablissement   Etablissement @relation(fields: [etablissementId], references: [id])
   notes           Note[]
   emploiDuTemps   EmploiDuTemps[]
   enseignants     EnseignantMatiere[]
@@ -163,19 +198,21 @@ model Note {
   id         String   @id @default(uuid())
   eleveId    String
   matiereId  String
-  trimestre  Int      // 1, 2 ou 3
+  periode    Int      // 1 à 5 (bimestres, confirmé par le bulletin réel de l'école)
   valeur     Float
   date       DateTime @default(now())
 
   eleve      Eleve   @relation(fields: [eleveId], references: [id])
   matiere    Matiere @relation(fields: [matiereId], references: [id])
+
+  @@unique([eleveId, matiereId, periode])
 }
 
 model Bulletin {
   id               String   @id @default(uuid())
   eleveId          String
   anneeScolaireId  String
-  trimestre        Int
+  periode          Int      // 1 à 5
   moyenneGenerale  Float?
   rang             Int?
   appreciation     String?
@@ -184,7 +221,23 @@ model Bulletin {
   eleve            Eleve         @relation(fields: [eleveId], references: [id])
   anneeScolaire    AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
 
-  @@unique([eleveId, anneeScolaireId, trimestre])
+  @@unique([eleveId, anneeScolaireId, periode])
+}
+
+/// Barème des frais par niveau et par année scolaire.
+/// Édité par l'Économe/Admin — jamais codé en dur, car les montants changent chaque année.
+model BaremeFrais {
+  id              String   @id @default(uuid())
+  niveauId        String
+  anneeScolaireId String
+  droit           Float    // fixe historiquement (70 000 Ar en 2026-2027) mais reste éditable
+  ecolage         Float    // varie selon le niveau
+  fraisExamen     Float    @default(0) // 20 000 Ar uniquement pour les classes d'examen (3e, Terminale), 0 sinon
+
+  niveau          Niveau        @relation(fields: [niveauId], references: [id])
+  anneeScolaire   AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+
+  @@unique([niveauId, anneeScolaireId])
 }
 
 model Presence {
@@ -199,13 +252,21 @@ model Presence {
   @@unique([eleveId, date])
 }
 
+enum TypeFrais {
+  DROIT           // frais d'inscription/droit, payé une fois à la rentrée
+  ECOLAGE         // écolage annuel, payé en bloc (confirmé: pas de paiement par tranche chez COPEC)
+  FRAIS_EXAMEN    // "feuille de copie examen"
+  AUTRE
+}
+
 model Paiement {
   id            String         @id @default(uuid())
   eleveId       String
   montant       Float
-  typeFrais     String         // "écolage", "cantine", "transport", etc. (à ajuster avec l'école)
+  typeFrais     TypeFrais
   datePaiement  DateTime       @default(now())
   moyenPaiement String?
+  numeroRecu    String?        @unique
   statut        StatutPaiement @default(PAYE)
 
   eleve         Eleve @relation(fields: [eleveId], references: [id])
