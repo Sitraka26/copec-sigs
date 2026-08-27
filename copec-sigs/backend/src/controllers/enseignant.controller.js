@@ -61,5 +61,40 @@ async function creer(req, res, next) {
     next(err);
   }
 }
+/**
+ * PATCH /api/enseignants/:id/matieres
+ * Remplace complètement la liste des matières qu'un enseignant est habilité
+ * à enseigner (utile pour corriger/mettre à jour après la création initiale).
+ */
+async function assignerMatieres(req, res, next) {
+  try {
+    const { matiereIds } = req.body;
+    if (!Array.isArray(matiereIds)) {
+      return res.status(400).json({ error: 'matiereIds doit être un tableau' });
+    }
 
-module.exports = { lister, creer };
+    const enseignant = await prisma.enseignant.findFirst({
+      where: { id: req.params.id, utilisateur: { etablissementId: req.user.etablissementId } },
+    });
+    if (!enseignant) return res.status(404).json({ error: 'Enseignant introuvable' });
+
+    await prisma.$transaction([
+      prisma.enseignantMatiere.deleteMany({ where: { enseignantId: enseignant.id } }),
+      prisma.enseignantMatiere.createMany({
+        data: matiereIds.map((matiereId) => ({ enseignantId: enseignant.id, matiereId })),
+      }),
+    ]);
+
+    const enseignantMisAJour = await prisma.enseignant.findUnique({
+      where: { id: enseignant.id },
+      include: { utilisateur: true, matieres: { include: { matiere: true } } },
+    });
+
+    res.json(enseignantMisAJour);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { lister, creer, assignerMatieres };
+
