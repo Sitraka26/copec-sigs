@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 
+
 const authRoutes = require('./routes/auth.routes');
 const eleveRoutes = require('./routes/eleve.routes');
 const classeRoutes = require('./routes/classe.routes');
@@ -11,6 +12,8 @@ const inscriptionRoutes = require('./routes/inscription.routes');
 const noteRoutes = require('./routes/note.routes');
 const bulletinRoutes = require('./routes/bulletin.routes');
 const matiereRoutes = require('./routes/matiere.routes');
+const paiementRoutes = require('./routes/paiement.routes');
+const presenceRoutes = require('./routes/presence.routes');
 const errorHandler = require('./middlewares/errorHandler');
 
 const app = express();
@@ -31,6 +34,8 @@ app.use('/api/inscriptions', inscriptionRoutes);
 app.use('/api/notes', noteRoutes);
 app.use('/api/bulletins', bulletinRoutes);
 app.use('/api/matieres', matiereRoutes);
+app.use('/api/paiements', paiementRoutes);
+app.use('/api/presences', presenceRoutes);
 
 app.use(errorHandler);
 

@@ -268,7 +268,8 @@ async function genererPdfEleve(req, res, next) {
     navigateur = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
     const page = await navigateur.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdfBuffer = await page.pdf({ format: 'A4', landscape: true, printBackground: true });
+    const pdfUint8Array = await page.pdf({ format: 'A4', landscape: true, printBackground: true });
+    const pdfBuffer = Buffer.from(pdfUint8Array); // conversion nécessaire : page.pdf() renvoie un Uint8Array, pas un vrai Buffer Node
     await navigateur.close();
 
     res.set({

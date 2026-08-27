@@ -92,6 +92,7 @@ model AnneeScolaire {
   classes         Classe[]
   bulletins       Bulletin[]
   baremesFrais    BaremeFrais[]
+  paiements       Paiement[]
 
   @@unique([etablissementId, libelle])
 }
@@ -260,16 +261,18 @@ enum TypeFrais {
 }
 
 model Paiement {
-  id            String         @id @default(uuid())
-  eleveId       String
-  montant       Float
-  typeFrais     TypeFrais
-  datePaiement  DateTime       @default(now())
-  moyenPaiement String?
-  numeroRecu    String?        @unique
-  statut        StatutPaiement @default(PAYE)
+  id              String         @id @default(uuid())
+  eleveId         String
+  anneeScolaireId String
+  montant         Float
+  typeFrais       TypeFrais
+  datePaiement    DateTime       @default(now())
+  moyenPaiement   String?
+  numeroRecu      String?        @unique
+  statut          StatutPaiement @default(PAYE)
 
-  eleve         Eleve @relation(fields: [eleveId], references: [id])
+  eleve           Eleve         @relation(fields: [eleveId], references: [id])
+  anneeScolaire   AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
 }
 
 model EmploiDuTemps {
