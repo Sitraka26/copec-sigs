@@ -8,6 +8,7 @@ const liensMenu = [
   { to: '/notes', label: 'Notes' },
   { to: '/presences', label: 'Présences' },
   { to: '/paiements', label: 'Paiements' },
+  { to: '/emploi-du-temps', label: 'Emploi du temps' },
 ];
 
 export default function Layout() {

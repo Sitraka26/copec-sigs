@@ -7,6 +7,7 @@ import Inscriptions from './pages/Inscriptions';
 import Notes from './pages/Notes';
 import Presences from './pages/Presences';
 import Paiements from './pages/Paiements';
+import EmploiDuTemps from './pages/EmploiDuTemps';
 import Layout from './components/Layout';
 import RouteProtegee from './components/RouteProtegee';
 
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/notes" element={<Notes />} />
           <Route path="/presences" element={<Presences />} />
           <Route path="/paiements" element={<Paiements />} />
+          <Route path="/emploi-du-temps" element={<EmploiDuTemps />} />
         </Route>
       </Routes>
     </BrowserRouter>
