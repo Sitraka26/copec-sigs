@@ -15,6 +15,8 @@ const matiereRoutes = require('./routes/matiere.routes');
 const paiementRoutes = require('./routes/paiement.routes');
 const presenceRoutes = require('./routes/presence.routes');
 const errorHandler = require('./middlewares/errorHandler');
+const enseignantRoutes = require('./routes/enseignant.routes');
+const emploiDuTempsRoutes = require('./routes/emploiDuTemps.routes');
 
 const app = express();
 
@@ -36,6 +38,8 @@ app.use('/api/bulletins', bulletinRoutes);
 app.use('/api/matieres', matiereRoutes);
 app.use('/api/paiements', paiementRoutes);
 app.use('/api/presences', presenceRoutes);
+app.use('/api/enseignants', enseignantRoutes);
+app.use('/api/emplois-du-temps', emploiDuTempsRoutes);
 
 app.use(errorHandler);
 
