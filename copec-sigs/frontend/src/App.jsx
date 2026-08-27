@@ -5,6 +5,7 @@ import Eleves from './pages/Eleves';
 import Classes from './pages/Classes';
 import Inscriptions from './pages/Inscriptions';
 import Notes from './pages/Notes';
+import Presences from './pages/Presences';
 import Paiements from './pages/Paiements';
 import Layout from './components/Layout';
 import RouteProtegee from './components/RouteProtegee';
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/classes" element={<Classes />} />
           <Route path="/inscriptions" element={<Inscriptions />} />
           <Route path="/notes" element={<Notes />} />
+          <Route path="/presences" element={<Presences />} />
           <Route path="/paiements" element={<Paiements />} />
         </Route>
       </Routes>

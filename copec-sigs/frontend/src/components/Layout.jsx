@@ -6,6 +6,7 @@ const liensMenu = [
   { to: '/classes', label: 'Classes' },
   { to: '/inscriptions', label: 'Inscriptions' },
   { to: '/notes', label: 'Notes' },
+  { to: '/presences', label: 'Présences' },
   { to: '/paiements', label: 'Paiements' },
 ];
 
