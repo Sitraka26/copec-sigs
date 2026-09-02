@@ -1,6 +1,7 @@
 const express = require('express');
-const { authRequired } = require('../middlewares/auth');
+const { authRequired, requireRole } = require('../middlewares/auth');
 const prisma = require('../config/prisma');
+const { obtenirProgramme, mettreAJourProgramme } = require('../controllers/programme.controller');
 
 const router = express.Router();
 
@@ -14,5 +15,8 @@ router.get('/', async (req, res, next) => {
     next(err);
   }
 });
+
+router.get('/:id/programme', obtenirProgramme);
+router.put('/:id/programme', requireRole('ADMIN', 'DIRECTEUR'), mettreAJourProgramme);
 
 module.exports = router;

@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma');
+const { obtenirCoefficientsPourNiveau } = require('./programme.controller');
 
 const PERIODE_MIN = 1;
 const PERIODE_MAX = 5; // 5 bimestres, confirmé avec l'école
@@ -28,6 +29,7 @@ async function listerPourSaisie(req, res, next) {
     // Vérifie que la classe et la matière appartiennent à l'établissement de l'utilisateur
     const classe = await prisma.classe.findFirst({
       where: { id: classeId, etablissementId: req.user.etablissementId },
+      include: { niveau: true },
     });
     if (!classe) return res.status(404).json({ error: 'Classe introuvable' });
 
@@ -35,6 +37,9 @@ async function listerPourSaisie(req, res, next) {
       where: { id: matiereId, etablissementId: req.user.etablissementId },
     });
     if (!matiere) return res.status(404).json({ error: 'Matière introuvable' });
+
+    const coefficients = await obtenirCoefficientsPourNiveau(classe.niveauId, req.user.etablissementId);
+    const coefficientPourCeNiveau = coefficients[matiereId] ?? matiere.coefficient;
 
     const inscriptions = await prisma.inscription.findMany({
       where: { classeId, statut: 'ACTIVE' },
@@ -57,7 +62,7 @@ async function listerPourSaisie(req, res, next) {
       noteId: insc.eleve.notes[0]?.id ?? null,
     }));
 
-    res.json({ matiere, periode: Number(periode), coefficient: matiere.coefficient, eleves: grille });
+    res.json({ matiere, periode: Number(periode), coefficient: coefficientPourCeNiveau, eleves: grille });
   } catch (err) {
     next(err);
   }
@@ -114,7 +119,6 @@ async function enregistrerLot(req, res, next) {
       notes.map((n) =>
         prisma.note.upsert({
           where: {
-            // nécessite une contrainte unique (eleveId, matiereId, periode) — voir note ci-dessous
             eleveId_matiereId_periode: { eleveId: n.eleveId, matiereId, periode: Number(periode) },
           },
           update: { valeur: n.valeur, date: new Date() },

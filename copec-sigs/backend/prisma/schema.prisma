@@ -106,6 +106,7 @@ model Niveau {
 
   classes Classe[]
   baremesFrais BaremeFrais[]
+   programmes NiveauMatiere[]
 }
 
 model Classe {
@@ -173,6 +174,7 @@ model Matiere {
   notes           Note[]
   emploiDuTemps   EmploiDuTemps[]
   enseignants     EnseignantMatiere[]
+   programmes NiveauMatiere[]
 }
 
 model Enseignant {
@@ -240,6 +242,24 @@ model BaremeFrais {
 
   @@unique([niveauId, anneeScolaireId])
 }
+/// Coefficient d'une matière POUR UN NIVEAU DONNÉ (ex: SVT coef. 2 en 6ème,
+/// mais coef. 4 en Terminale D). Remplace le coefficient unique et global
+/// qui était une simplification excessive au démarrage du projet.
+/// S'il n'existe pas d'entrée ici pour un couple (niveau, matière), le
+/// coefficient par défaut de la Matiere est utilisé en repli.
+model NiveauMatiere {
+  id          String @id @default(uuid())
+  niveauId    String
+  matiereId   String
+  coefficient Float
+
+  niveau      Niveau  @relation(fields: [niveauId], references: [id])
+  matiere     Matiere @relation(fields: [matiereId], references: [id])
+
+  @@unique([niveauId, matiereId])
+}
+
+
 
 model Presence {
   id       String         @id @default(uuid())

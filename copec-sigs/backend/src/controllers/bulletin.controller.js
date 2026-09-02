@@ -1,22 +1,22 @@
 const prisma = require('../config/prisma');
 const puppeteer = require('puppeteer');
 const { genererHtmlBulletin } = require('../services/pdf/bulletinTemplate');
+const { obtenirCoefficientsPourNiveau } = require('./programme.controller');
 
 /**
- * Calcule la moyenne pondérée d'un élève pour une période donnée,
- * à partir de ses notes et des coefficients de chaque matière.
- * Moyenne = somme(note * coefficient) / somme(coefficients)
+ * Calcule la moyenne pondérée d'un élève pour une période donnée, à partir
+ * de ses notes et des coefficients DE SON NIVEAU (pas un coefficient fixe
+ * global — un même matière peut avoir un coefficient différent en 6ème
+ * qu'en Terminale, comme sur les bulletins réels de l'école).
  */
-async function calculerMoyenneEleve(eleveId, periode) {
-  const notes = await prisma.note.findMany({
-    where: { eleveId, periode },
-    include: { matiere: true },
-  });
-
+async function calculerMoyenneEleve(eleveId, periode, niveauId, etablissementId) {
+  const notes = await prisma.note.findMany({ where: { eleveId, periode } });
   if (notes.length === 0) return null;
 
-  const totalPondere = notes.reduce((acc, n) => acc + n.valeur * n.matiere.coefficient, 0);
-  const totalCoefficients = notes.reduce((acc, n) => acc + n.matiere.coefficient, 0);
+  const coefficients = await obtenirCoefficientsPourNiveau(niveauId, etablissementId);
+
+  const totalPondere = notes.reduce((acc, n) => acc + n.valeur * (coefficients[n.matiereId] ?? 1), 0);
+  const totalCoefficients = notes.reduce((acc, n) => acc + (coefficients[n.matiereId] ?? 1), 0);
 
   if (totalCoefficients === 0) return null;
 
@@ -35,6 +35,7 @@ async function apercuClasse(req, res, next) {
 
     const classe = await prisma.classe.findFirst({
       where: { id: classeId, etablissementId: req.user.etablissementId },
+      include: { niveau: true },
     });
     if (!classe) return res.status(404).json({ error: 'Classe introuvable' });
 
@@ -45,7 +46,7 @@ async function apercuClasse(req, res, next) {
 
     const resultats = [];
     for (const insc of inscriptions) {
-      const moyenne = await calculerMoyenneEleve(insc.eleve.id, p);
+      const moyenne = await calculerMoyenneEleve(insc.eleve.id, p, classe.niveauId, req.user.etablissementId);
       resultats.push({
         eleveId: insc.eleve.id,
         nom: insc.eleve.nom,
@@ -89,6 +90,7 @@ async function genererPourClasse(req, res, next) {
 
     const classe = await prisma.classe.findFirst({
       where: { id: classeId, etablissementId: req.user.etablissementId },
+      include: { niveau: true },
     });
     if (!classe) return res.status(404).json({ error: 'Classe introuvable' });
 
@@ -104,7 +106,7 @@ async function genererPourClasse(req, res, next) {
     // Calcule la moyenne de chaque élève
     const resultats = [];
     for (const insc of inscriptions) {
-      const moyenne = await calculerMoyenneEleve(insc.eleve.id, p);
+      const moyenne = await calculerMoyenneEleve(insc.eleve.id, p, classe.niveauId, req.user.etablissementId);
       resultats.push({ eleveId: insc.eleve.id, moyenne });
     }
 
@@ -163,6 +165,11 @@ async function detailBulletinEleve(req, res, next) {
     });
     if (!eleve) return res.status(404).json({ error: 'Élève introuvable' });
 
+    const niveauId = eleve.inscriptions[0]?.classe?.niveauId;
+    const coefficients = niveauId
+      ? await obtenirCoefficientsPourNiveau(niveauId, req.user.etablissementId)
+      : {};
+
     const notes = await prisma.note.findMany({
       where: { eleveId, periode: p },
       include: { matiere: true },
@@ -179,7 +186,7 @@ async function detailBulletinEleve(req, res, next) {
       periode: p,
       notes: notes.map((n) => ({
         matiere: n.matiere.nom,
-        coefficient: n.matiere.coefficient,
+        coefficient: coefficients[n.matiereId] ?? n.matiere.coefficient,
         valeur: n.valeur,
       })),
       moyenneGenerale: bulletin?.moyenneGenerale ?? null,
@@ -218,10 +225,14 @@ async function genererPdfEleve(req, res, next) {
 
     const anneeScolaire = await prisma.anneeScolaire.findUnique({ where: { id: anneeScolaireId } });
 
-    const matieres = await prisma.matiere.findMany({
+    const matieresBrutes = await prisma.matiere.findMany({
       where: { etablissementId: req.user.etablissementId },
       orderBy: { nom: 'asc' },
     });
+
+    // Coefficients propres au niveau de cet élève (pas le coefficient générique)
+    const coefficients = await obtenirCoefficientsPourNiveau(inscription.classe.niveauId, req.user.etablissementId);
+    const matieres = matieresBrutes.map((m) => ({ ...m, coefficient: coefficients[m.id] ?? m.coefficient }));
 
     const notes = await prisma.note.findMany({ where: { eleveId } });
     const notesParMatierePeriode = {};
@@ -265,11 +276,23 @@ async function genererPdfEleve(req, res, next) {
       effectifClasse,
     });
 
-    navigateur = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
+    navigateur = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-background-networking',
+        '--disable-component-update',
+        '--disable-domain-reliability',
+        '--disable-client-side-phishing-detection',
+        '--disable-sync',
+        '--disable-default-apps',
+        '--no-first-run',
+      ],
+    });
     const page = await navigateur.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
     const pdfUint8Array = await page.pdf({ format: 'A4', landscape: true, printBackground: true });
-    const pdfBuffer = Buffer.from(pdfUint8Array); // conversion nécessaire : page.pdf() renvoie un Uint8Array, pas un vrai Buffer Node
+    const pdfBuffer = Buffer.from(pdfUint8Array);
     await navigateur.close();
 
     res.set({
