@@ -19,6 +19,8 @@ const enseignantRoutes = require('./routes/enseignant.routes');
 const emploiDuTempsRoutes = require('./routes/emploiDuTemps.routes');
 const anneeScolaireRoutes = require('./routes/anneeScolaire.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const rateLimit = require('express-rate-limit');
+const baremeRoutes = require('./routes/bareme.routes');
 
 const app = express();
 
@@ -30,6 +32,15 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'API SIGS COPEC opérationnelle' });
 });
 
+const limiteurConnexion = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 tentatives max par IP sur cette fenêtre
+  message: { error: 'Trop de tentatives de connexion. Réessaie dans quelques minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/auth/login', limiteurConnexion);
 app.use('/api/auth', authRoutes);
 app.use('/api/eleves', eleveRoutes);
 app.use('/api/classes', classeRoutes);
@@ -44,6 +55,7 @@ app.use('/api/enseignants', enseignantRoutes);
 app.use('/api/emplois-du-temps', emploiDuTempsRoutes);
 app.use('/api/annees-scolaires', anneeScolaireRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/baremes', baremeRoutes);
 
 app.use(errorHandler);
 

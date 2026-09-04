@@ -1,3 +1,5 @@
+const { echapperHtml } = require('../../utils/html.utils');
+
 const LIBELLES_TYPE_FRAIS = {
   DROIT: "Droit d'inscription",
   ECOLAGE: 'Écolage',
@@ -43,20 +45,20 @@ function genererHtmlRecu(data) {
   </head>
   <body>
     <div class="entete">
-      <div class="etablissement">${etablissement.nom}</div>
-      ${etablissement.telephone ? `<div>${etablissement.telephone}</div>` : ''}
+      <div class="etablissement">${echapperHtml(etablissement.nom)}</div>
+      ${etablissement.telephone ? `<div>${echapperHtml(etablissement.telephone)}</div>` : ''}
     </div>
 
     <div class="titre">Reçu de Paiement</div>
-    <div class="numero">N° ${paiement.numeroRecu}</div>
+    <div class="numero">N° ${echapperHtml(paiement.numeroRecu)}</div>
 
     <table>
       <tr><td class="label">Date</td><td class="valeur">${formatDate(paiement.datePaiement)}</td></tr>
-      <tr><td class="label">Élève</td><td class="valeur">${eleve.nom} ${eleve.prenom}</td></tr>
-      <tr><td class="label">Matricule</td><td class="valeur">${eleve.matricule}</td></tr>
-      <tr><td class="label">Classe</td><td class="valeur">${classe ? classe.nom : '-'}</td></tr>
-      <tr><td class="label">Nature du versement</td><td class="valeur">${LIBELLES_TYPE_FRAIS[paiement.typeFrais] || paiement.typeFrais}</td></tr>
-      <tr><td class="label">Moyen de paiement</td><td class="valeur">${paiement.moyenPaiement || '-'}</td></tr>
+      <tr><td class="label">Élève</td><td class="valeur">${echapperHtml(eleve.nom)} ${echapperHtml(eleve.prenom)}</td></tr>
+      <tr><td class="label">Matricule</td><td class="valeur">${echapperHtml(eleve.matricule)}</td></tr>
+      <tr><td class="label">Classe</td><td class="valeur">${classe ? echapperHtml(classe.nom) : '-'}</td></tr>
+      <tr><td class="label">Nature du versement</td><td class="valeur">${echapperHtml(LIBELLES_TYPE_FRAIS[paiement.typeFrais] || paiement.typeFrais)}</td></tr>
+      <tr><td class="label">Moyen de paiement</td><td class="valeur">${echapperHtml(paiement.moyenPaiement) || '-'}</td></tr>
     </table>
 
     <div class="montant-box">

@@ -1,3 +1,5 @@
+const { echapperHtml } = require('../../utils/html.utils');
+
 const NOMS_PERIODES = {
   1: '1er Bimestre',
   2: '2ème Bimestre',
@@ -46,12 +48,12 @@ function genererHtmlBulletin(data) {
         .map((p) => {
           const valeur = notesParMatierePeriode[matiere.id]?.[p];
           return `
-            <td class="coef">${matiere.coefficient}</td>
+            <td class="coef">${echapperHtml(matiere.coefficient)}</td>
             <td class="note">${valeur !== undefined && valeur !== null ? formatNombre(valeur) : '-'}</td>
           `;
         })
         .join('');
-      return `<tr><td class="discipline">${matiere.nom}</td>${cellulesPeriodes}</tr>`;
+      return `<tr><td class="discipline">${echapperHtml(matiere.nom)}</td>${cellulesPeriodes}</tr>`;
     })
     .join('');
 
@@ -106,16 +108,16 @@ function genererHtmlBulletin(data) {
   <body>
     <div class="entete">
       <div>
-        <div class="etablissement">${etablissement.nom}</div>
-        <div>Année scolaire : ${anneeScolaire.libelle}</div>
+        <div class="etablissement">${echapperHtml(etablissement.nom)}</div>
+        <div>Année scolaire : ${echapperHtml(anneeScolaire.libelle)}</div>
       </div>
       <h1>Bulletin de Notes</h1>
     </div>
 
     <div class="infos-eleve">
-      <span><strong>Nom et Prénom :</strong> ${eleve.nom} ${eleve.prenom}</span>
-      <span><strong>Matricule :</strong> ${eleve.matricule}</span>
-      <span><strong>Classe :</strong> ${classe.nom} (${classe.niveau.libelle}${classe.niveau.filiere ? ' - ' + classe.niveau.filiere : ''})</span>
+      <span><strong>Nom et Prénom :</strong> ${echapperHtml(eleve.nom)} ${echapperHtml(eleve.prenom)}</span>
+      <span><strong>Matricule :</strong> ${echapperHtml(eleve.matricule)}</span>
+      <span><strong>Classe :</strong> ${echapperHtml(classe.nom)} (${echapperHtml(classe.niveau.libelle)}${classe.niveau.filiere ? ' - ' + echapperHtml(classe.niveau.filiere) : ''})</span>
     </div>
 
     <table>

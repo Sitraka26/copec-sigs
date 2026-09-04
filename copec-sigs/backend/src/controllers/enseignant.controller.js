@@ -25,7 +25,8 @@ async function creer(req, res, next) {
       return res.status(400).json({ error: 'nom, prenom et email sont requis' });
     }
 
-    const motDePasseTemporaire = 'copec' + Math.floor(1000 + Math.random() * 9000);
+   const crypto = require('crypto'); // à ajouter en haut du fichier si absent
+const motDePasseTemporaire = crypto.randomBytes(6).toString('base64url'); // ex: "aZ3f-Qk2"
     const motDePasseHash = await bcrypt.hash(motDePasseTemporaire, 10);
 
     const utilisateur = await prisma.utilisateur.create({
