@@ -3,8 +3,8 @@ const { authRequired, requireRole } = require('../middlewares/auth');
 const { lister, creer, activer } = require('../controllers/anneeScolaire.controller');
 
 const router = express.Router();
-
 router.use(authRequired);
+router.use(requireRole('ADMIN', 'DIRECTEUR', 'SECRETAIRE', 'ECONOME'));
 
 router.get('/', lister);
 router.post('/', requireRole('ADMIN', 'DIRECTEUR'), creer);

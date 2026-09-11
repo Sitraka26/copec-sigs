@@ -2,32 +2,18 @@ const prisma = require('../config/prisma');
 const puppeteer = require('puppeteer');
 const { genererHtmlBulletin } = require('../services/pdf/bulletinTemplate');
 const { obtenirCoefficientsPourNiveau } = require('./programme.controller');
+const { obtenirClasseIdsEnseignant } = require('../utils/enseignant.utils');
 
-/**
- * Calcule la moyenne pondérée d'un élève pour une période donnée, à partir
- * de ses notes et des coefficients DE SON NIVEAU (pas un coefficient fixe
- * global — un même matière peut avoir un coefficient différent en 6ème
- * qu'en Terminale, comme sur les bulletins réels de l'école).
- */
 async function calculerMoyenneEleve(eleveId, periode, niveauId, etablissementId) {
   const notes = await prisma.note.findMany({ where: { eleveId, periode } });
   if (notes.length === 0) return null;
-
   const coefficients = await obtenirCoefficientsPourNiveau(niveauId, etablissementId);
-
   const totalPondere = notes.reduce((acc, n) => acc + n.valeur * (coefficients[n.matiereId] ?? 1), 0);
   const totalCoefficients = notes.reduce((acc, n) => acc + (coefficients[n.matiereId] ?? 1), 0);
-
   if (totalCoefficients === 0) return null;
-
-  return Math.round((totalPondere / totalCoefficients) * 100) / 100; // arrondi à 2 décimales
+  return Math.round((totalPondere / totalCoefficients) * 100) / 100;
 }
 
-/**
- * GET /api/bulletins/classe/:classeId/periode/:periode
- * Calcule (sans enregistrer) la moyenne et le rang de tous les élèves
- * d'une classe pour une période — utile pour prévisualiser avant de générer.
- */
 async function apercuClasse(req, res, next) {
   try {
     const { classeId, periode } = req.params;
@@ -39,6 +25,11 @@ async function apercuClasse(req, res, next) {
     });
     if (!classe) return res.status(404).json({ error: 'Classe introuvable' });
 
+    const classeIdsEnseignant = await obtenirClasseIdsEnseignant(req);
+    if (classeIdsEnseignant !== null && !classeIdsEnseignant.includes(classeId)) {
+      return res.status(403).json({ error: "Vous n'enseignez pas dans cette classe" });
+    }
+
     const inscriptions = await prisma.inscription.findMany({
       where: { classeId, statut: 'ACTIVE' },
       include: { eleve: true },
@@ -47,24 +38,13 @@ async function apercuClasse(req, res, next) {
     const resultats = [];
     for (const insc of inscriptions) {
       const moyenne = await calculerMoyenneEleve(insc.eleve.id, p, classe.niveauId, req.user.etablissementId);
-      resultats.push({
-        eleveId: insc.eleve.id,
-        nom: insc.eleve.nom,
-        prenom: insc.eleve.prenom,
-        moyenne,
-      });
+      resultats.push({ eleveId: insc.eleve.id, nom: insc.eleve.nom, prenom: insc.eleve.prenom, moyenne });
     }
 
-    // Classement : les élèves sans moyenne (notes incomplètes) sont mis en bas, non classés
     const classes = resultats.filter((r) => r.moyenne !== null).sort((a, b) => b.moyenne - a.moyenne);
     const nonClasses = resultats.filter((r) => r.moyenne === null);
-
-    classes.forEach((r, index) => {
-      r.rang = index + 1;
-    });
-    nonClasses.forEach((r) => {
-      r.rang = null;
-    });
+    classes.forEach((r, index) => { r.rang = index + 1; });
+    nonClasses.forEach((r) => { r.rang = null; });
 
     res.json({ periode: p, effectif: resultats.length, resultats: [...classes, ...nonClasses] });
   } catch (err) {
@@ -72,13 +52,6 @@ async function apercuClasse(req, res, next) {
   }
 }
 
-/**
- * POST /api/bulletins/generer
- * Body: { classeId, anneeScolaireId, periode }
- * Calcule ET enregistre les bulletins (moyenne + rang) de toute une classe
- * pour une période donnée. Idempotent : régénérer écrase l'ancien résultat
- * (utile si des notes ont été corrigées après une première génération).
- */
 async function genererPourClasse(req, res, next) {
   try {
     const { classeId, anneeScolaireId, periode } = req.body;
@@ -98,45 +71,28 @@ async function genererPourClasse(req, res, next) {
       where: { classeId, statut: 'ACTIVE' },
       include: { eleve: true },
     });
-
     if (inscriptions.length === 0) {
       return res.status(400).json({ error: 'Aucun élève inscrit dans cette classe' });
     }
 
-    // Calcule la moyenne de chaque élève
     const resultats = [];
     for (const insc of inscriptions) {
       const moyenne = await calculerMoyenneEleve(insc.eleve.id, p, classe.niveauId, req.user.etablissementId);
       resultats.push({ eleveId: insc.eleve.id, moyenne });
     }
 
-    // Classement
     const classesOk = resultats.filter((r) => r.moyenne !== null).sort((a, b) => b.moyenne - a.moyenne);
     classesOk.forEach((r, index) => (r.rang = index + 1));
     const sansMoyenne = resultats.filter((r) => r.moyenne === null);
     sansMoyenne.forEach((r) => (r.rang = null));
-
     const tousLesResultats = [...classesOk, ...sansMoyenne];
 
-    // Enregistre (upsert) chaque bulletin
     const bulletins = await prisma.$transaction(
       tousLesResultats.map((r) =>
         prisma.bulletin.upsert({
-          where: {
-            eleveId_anneeScolaireId_periode: {
-              eleveId: r.eleveId,
-              anneeScolaireId,
-              periode: p,
-            },
-          },
+          where: { eleveId_anneeScolaireId_periode: { eleveId: r.eleveId, anneeScolaireId, periode: p } },
           update: { moyenneGenerale: r.moyenne, rang: r.rang, genereLe: new Date() },
-          create: {
-            eleveId: r.eleveId,
-            anneeScolaireId,
-            periode: p,
-            moyenneGenerale: r.moyenne,
-            rang: r.rang,
-          },
+          create: { eleveId: r.eleveId, anneeScolaireId, periode: p, moyenneGenerale: r.moyenne, rang: r.rang },
         })
       )
     );
@@ -147,11 +103,6 @@ async function genererPourClasse(req, res, next) {
   }
 }
 
-/**
- * GET /api/bulletins/eleve/:eleveId/periode/:periode
- * Détail complet du bulletin d'un élève : notes par matière + moyenne + rang.
- * C'est cette donnée qui alimentera le PDF (partie 2).
- */
 async function detailBulletinEleve(req, res, next) {
   try {
     const { eleveId, periode } = req.params;
@@ -159,16 +110,20 @@ async function detailBulletinEleve(req, res, next) {
 
     const eleve = await prisma.eleve.findFirst({
       where: { id: eleveId, etablissementId: req.user.etablissementId },
-      include: {
-        inscriptions: { where: { statut: 'ACTIVE' }, include: { classe: { include: { niveau: true } } } },
-      },
+      include: { inscriptions: { where: { statut: 'ACTIVE' }, include: { classe: { include: { niveau: true } } } } },
     });
     if (!eleve) return res.status(404).json({ error: 'Élève introuvable' });
 
+    const classeIdsEnseignant = await obtenirClasseIdsEnseignant(req);
+    if (classeIdsEnseignant !== null) {
+      const classeElevId = eleve.inscriptions[0]?.classeId;
+      if (!classeElevId || !classeIdsEnseignant.includes(classeElevId)) {
+        return res.status(403).json({ error: "Cet élève n'est pas dans une de vos classes" });
+      }
+    }
+
     const niveauId = eleve.inscriptions[0]?.classe?.niveauId;
-    const coefficients = niveauId
-      ? await obtenirCoefficientsPourNiveau(niveauId, req.user.etablissementId)
-      : {};
+    const coefficients = niveauId ? await obtenirCoefficientsPourNiveau(niveauId, req.user.etablissementId) : {};
 
     const notes = await prisma.note.findMany({
       where: { eleveId, periode: p },
@@ -176,9 +131,7 @@ async function detailBulletinEleve(req, res, next) {
       orderBy: { matiere: { nom: 'asc' } },
     });
 
-    const bulletin = await prisma.bulletin.findFirst({
-      where: { eleveId, periode: p },
-    });
+    const bulletin = await prisma.bulletin.findFirst({ where: { eleveId, periode: p } });
 
     res.json({
       eleve: { id: eleve.id, matricule: eleve.matricule, nom: eleve.nom, prenom: eleve.prenom },
@@ -197,12 +150,6 @@ async function detailBulletinEleve(req, res, next) {
   }
 }
 
-/**
- * GET /api/bulletins/eleve/:eleveId/annee/:anneeScolaireId/pdf
- * Génère le PDF du bulletin annuel complet (les 5 bimestres) d'un élève.
- * Suppose que genererPourClasse a déjà été appelé pour chaque période
- * concernée (sinon les moyennes/rangs de bimestre seront vides).
- */
 async function genererPdfEleve(req, res, next) {
   let navigateur;
   try {
@@ -212,16 +159,18 @@ async function genererPdfEleve(req, res, next) {
       where: { id: eleveId, etablissementId: req.user.etablissementId },
       include: {
         etablissement: true,
-        inscriptions: {
-          where: { anneeScolaireId },
-          include: { classe: { include: { niveau: true } } },
-        },
+        inscriptions: { where: { anneeScolaireId }, include: { classe: { include: { niveau: true } } } },
       },
     });
     if (!eleve) return res.status(404).json({ error: 'Élève introuvable' });
 
     const inscription = eleve.inscriptions[0];
     if (!inscription) return res.status(404).json({ error: "Aucune inscription trouvée pour cette année scolaire" });
+
+    const classeIdsEnseignant = await obtenirClasseIdsEnseignant(req);
+    if (classeIdsEnseignant !== null && !classeIdsEnseignant.includes(inscription.classeId)) {
+      return res.status(403).json({ error: "Cet élève n'est pas dans une de vos classes" });
+    }
 
     const anneeScolaire = await prisma.anneeScolaire.findUnique({ where: { id: anneeScolaireId } });
 
@@ -230,7 +179,6 @@ async function genererPdfEleve(req, res, next) {
       orderBy: { nom: 'asc' },
     });
 
-    // Coefficients propres au niveau de cet élève (pas le coefficient générique)
     const coefficients = await obtenirCoefficientsPourNiveau(inscription.classe.niveauId, req.user.etablissementId);
     const matieres = matieresBrutes.map((m) => ({ ...m, coefficient: coefficients[m.id] ?? m.coefficient }));
 
@@ -251,8 +199,6 @@ async function genererPdfEleve(req, res, next) {
       where: { classeId: inscription.classeId, statut: 'ACTIVE' },
     });
 
-    // Moyenne annuelle = moyenne simple des moyennes de bimestre disponibles
-    // ⚠️ Règle de calcul à reconfirmer avec l'école (hypothèse par défaut)
     const moyennesDisponibles = Object.values(bulletinsParPeriode)
       .map((b) => b.moyenneGenerale)
       .filter((m) => m !== null && m !== undefined);
@@ -261,7 +207,7 @@ async function genererPdfEleve(req, res, next) {
         ? moyennesDisponibles.reduce((a, b) => a + b, 0) / moyennesDisponibles.length
         : null;
 
-    const rangAnnuel = bulletinsParPeriode[5]?.rang ?? null; // approximation : rang du dernier bimestre
+    const rangAnnuel = bulletinsParPeriode[5]?.rang ?? null;
 
     const html = genererHtmlBulletin({
       etablissement: eleve.etablissement,
@@ -279,14 +225,9 @@ async function genererPdfEleve(req, res, next) {
     navigateur = await puppeteer.launch({
       headless: 'new',
       args: [
-        '--no-sandbox',
-        '--disable-background-networking',
-        '--disable-component-update',
-        '--disable-domain-reliability',
-        '--disable-client-side-phishing-detection',
-        '--disable-sync',
-        '--disable-default-apps',
-        '--no-first-run',
+        '--no-sandbox', '--disable-background-networking', '--disable-component-update',
+        '--disable-domain-reliability', '--disable-client-side-phishing-detection',
+        '--disable-sync', '--disable-default-apps', '--no-first-run',
       ],
     });
     const page = await navigateur.newPage();

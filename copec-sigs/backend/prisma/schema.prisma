@@ -62,6 +62,7 @@ model Etablissement {
   eleves         Eleve[]
   classes        Classe[]
   matieres       Matiere[]
+    messages Message[]
 }
 
 model Utilisateur {
@@ -76,6 +77,8 @@ model Utilisateur {
   createdAt      DateTime @default(now())
 
   etablissement  Etablissement @relation(fields: [etablissementId], references: [id])
+    messagesEnvoyes Message[] @relation("MessagesEnvoyes")
+  messagesRecus   Message[] @relation("MessagesRecus")
   enseignant     Enseignant?
 }
 
@@ -259,7 +262,23 @@ model NiveauMatiere {
   @@unique([niveauId, matiereId])
 }
 
+/// Messages internes entre le personnel (ex: la direction informe les
+/// enseignants). Peut cibler UNE personne précise (destinataireId) OU
+/// tout un poste d'un coup (destinataireRole, ex: tous les enseignants).
+model Message {
+  id                  String   @id @default(uuid())
+  etablissementId     String
+  expediteurId        String
+  destinataireId      String?
+  destinataireRole    Role?
+  contenu             String
+  dateEnvoi           DateTime @default(now())
+  luParUtilisateurIds String[] @default([])
 
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id])
+  expediteur    Utilisateur   @relation("MessagesEnvoyes", fields: [expediteurId], references: [id])
+  destinataire  Utilisateur?  @relation("MessagesRecus", fields: [destinataireId], references: [id])
+}
 
 model Presence {
   id       String         @id @default(uuid())

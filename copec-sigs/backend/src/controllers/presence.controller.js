@@ -1,11 +1,7 @@
 const prisma = require('../config/prisma');
 const { envoyerSms } = require('../services/sms.service');
+const { obtenirClasseIdsEnseignant } = require('../utils/enseignant.utils');
 
-/**
- * GET /api/presences/saisie?classeId=&date=
- * Grille des élèves d'une classe avec leur statut de présence existant
- * pour la date donnée (comme la grille de saisie des notes).
- */
 async function listerPourSaisie(req, res, next) {
   try {
     const { classeId, date } = req.query;
@@ -15,6 +11,11 @@ async function listerPourSaisie(req, res, next) {
       where: { id: classeId, etablissementId: req.user.etablissementId },
     });
     if (!classe) return res.status(404).json({ error: 'Classe introuvable' });
+
+    const classeIdsEnseignant = await obtenirClasseIdsEnseignant(req);
+    if (classeIdsEnseignant !== null && !classeIdsEnseignant.includes(classeId)) {
+      return res.status(403).json({ error: "Vous n'enseignez pas dans cette classe" });
+    }
 
     const dateJour = new Date(date);
 
@@ -45,13 +46,6 @@ async function listerPourSaisie(req, res, next) {
   }
 }
 
-/**
- * POST /api/presences/saisie
- * Body: { classeId, date, presences: [{ eleveId, statut, justifie }] }
- * Enregistre les présences de toute une classe pour une date, et envoie
- * un SMS au contact d'urgence de chaque élève NOUVELLEMENT marqué absent
- * (pas de renvoi de SMS si l'absence était déjà enregistrée avant).
- */
 async function enregistrerLot(req, res, next) {
   try {
     const { classeId, date, presences } = req.body;
@@ -72,6 +66,11 @@ async function enregistrerLot(req, res, next) {
     });
     if (!classe) return res.status(404).json({ error: 'Classe introuvable' });
 
+    const classeIdsEnseignant = await obtenirClasseIdsEnseignant(req);
+    if (classeIdsEnseignant !== null && !classeIdsEnseignant.includes(classeId)) {
+      return res.status(403).json({ error: "Vous n'enseignez pas dans cette classe" });
+    }
+
     const eleveIds = presences.map((p) => p.eleveId);
     const inscriptionsValides = await prisma.inscription.findMany({
       where: { classeId, eleveId: { in: eleveIds }, statut: 'ACTIVE' },
@@ -85,8 +84,6 @@ async function enregistrerLot(req, res, next) {
 
     const dateJour = new Date(date);
 
-    // Récupère les statuts déjà enregistrés AVANT modification, pour ne
-    // notifier les parents que des absences nouvellement saisies.
     const presencesExistantes = await prisma.presence.findMany({
       where: { eleveId: { in: eleveIds }, date: dateJour },
     });
@@ -119,10 +116,6 @@ async function enregistrerLot(req, res, next) {
   }
 }
 
-/**
- * GET /api/presences?classeId=&date=
- * Liste simple (utilisée pour des rapports/consultations).
- */
 async function lister(req, res, next) {
   try {
     const { classeId, date } = req.query;

@@ -3,7 +3,6 @@ const { authRequired, requireRole } = require('../middlewares/auth');
 const { lister, obtenirParId, creer, modifier, supprimer } = require('../controllers/classe.controller');
 
 const router = express.Router();
-
 router.use(authRequired);
 
 router.get('/', lister);

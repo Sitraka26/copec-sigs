@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma');
+const { obtenirClasseIdsEnseignant } = require('../utils/enseignant.utils');
 
 const JOURS = { 1: 'Lundi', 2: 'Mardi', 3: 'Mercredi', 4: 'Jeudi', 5: 'Vendredi', 6: 'Samedi' };
 
@@ -11,6 +12,11 @@ async function listerParClasse(req, res, next) {
       where: { id: classeId, etablissementId: req.user.etablissementId },
     });
     if (!classe) return res.status(404).json({ error: 'Classe introuvable' });
+
+    const classeIdsEnseignant = await obtenirClasseIdsEnseignant(req);
+    if (classeIdsEnseignant !== null && !classeIdsEnseignant.includes(classeId)) {
+      return res.status(403).json({ error: "Vous n'enseignez pas dans cette classe" });
+    }
 
     const seances = await prisma.emploiDuTemps.findMany({
       where: { classeId },
@@ -43,8 +49,6 @@ async function creer(req, res, next) {
     });
     if (!classe) return res.status(404).json({ error: 'Classe introuvable' });
 
-    // RÈGLE 1 : l'enseignant doit être habilité à enseigner cette matière
-    // (assigné via son profil, pas n'importe qui sur n'importe quelle matière)
     const habilitation = await prisma.enseignantMatiere.findUnique({
       where: { enseignantId_matiereId: { enseignantId, matiereId } },
     });
@@ -55,24 +59,17 @@ async function creer(req, res, next) {
       });
     }
 
-    // RÈGLE 2 : la classe n'a pas déjà une autre séance sur ce créneau
     const conflitsClasse = await prisma.emploiDuTemps.findMany({ where: { classeId, jour } });
-    const chevauchementClasse = conflitsClasse.some(
-      (c) => heureDebut < c.heureFin && heureFin > c.heureDebut
-    );
+    const chevauchementClasse = conflitsClasse.some((c) => heureDebut < c.heureFin && heureFin > c.heureDebut);
     if (chevauchementClasse) {
       return res.status(409).json({ error: 'Ce créneau chevauche une séance déjà existante pour cette classe' });
     }
 
-    // RÈGLE 3 : l'enseignant n'est pas déjà occupé sur ce créneau, MÊME dans
-    // une autre classe (un enseignant ne peut pas être à deux endroits à la fois)
     const conflitsEnseignant = await prisma.emploiDuTemps.findMany({
       where: { enseignantId, jour },
       include: { classe: true },
     });
-    const conflitEnseignant = conflitsEnseignant.find(
-      (c) => heureDebut < c.heureFin && heureFin > c.heureDebut
-    );
+    const conflitEnseignant = conflitsEnseignant.find((c) => heureDebut < c.heureFin && heureFin > c.heureDebut);
     if (conflitEnseignant) {
       return res.status(409).json({
         error: `Cet enseignant a déjà une séance sur ce créneau, dans la classe "${conflitEnseignant.classe.nom}"`,
@@ -99,7 +96,6 @@ async function supprimer(req, res, next) {
     if (!seance || seance.classe.etablissementId !== req.user.etablissementId) {
       return res.status(404).json({ error: 'Séance introuvable' });
     }
-
     await prisma.emploiDuTemps.delete({ where: { id: req.params.id } });
     res.status(204).send();
   } catch (err) {

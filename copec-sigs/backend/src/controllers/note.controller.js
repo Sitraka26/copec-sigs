@@ -1,20 +1,15 @@
 const prisma = require('../config/prisma');
 const { obtenirCoefficientsPourNiveau } = require('./programme.controller');
+const { enseignantEnseigneCetteMatiereDansCetteClasse } = require('../utils/enseignant.utils');
 
 const PERIODE_MIN = 1;
-const PERIODE_MAX = 5; // 5 bimestres, confirmé avec l'école
+const PERIODE_MAX = 5;
 
 function periodeValide(periode) {
   const p = Number(periode);
   return Number.isInteger(p) && p >= PERIODE_MIN && p <= PERIODE_MAX;
 }
 
-/**
- * GET /api/notes/saisie?classeId=&matiereId=&periode=
- * Retourne la liste des élèves inscrits dans la classe, avec leur note
- * existante pour cette matière/période (ou null si pas encore saisie).
- * C'est la vue "grille" qu'un enseignant utilise pour remplir les notes.
- */
 async function listerPourSaisie(req, res, next) {
   try {
     const { classeId, matiereId, periode } = req.query;
@@ -26,7 +21,6 @@ async function listerPourSaisie(req, res, next) {
       return res.status(400).json({ error: `periode doit être entre ${PERIODE_MIN} et ${PERIODE_MAX}` });
     }
 
-    // Vérifie que la classe et la matière appartiennent à l'établissement de l'utilisateur
     const classe = await prisma.classe.findFirst({
       where: { id: classeId, etablissementId: req.user.etablissementId },
       include: { niveau: true },
@@ -37,6 +31,11 @@ async function listerPourSaisie(req, res, next) {
       where: { id: matiereId, etablissementId: req.user.etablissementId },
     });
     if (!matiere) return res.status(404).json({ error: 'Matière introuvable' });
+
+    const autorise = await enseignantEnseigneCetteMatiereDansCetteClasse(req, classeId, matiereId);
+    if (!autorise) {
+      return res.status(403).json({ error: "Vous n'êtes pas assigné à cette matière dans cette classe" });
+    }
 
     const coefficients = await obtenirCoefficientsPourNiveau(classe.niveauId, req.user.etablissementId);
     const coefficientPourCeNiveau = coefficients[matiereId] ?? matiere.coefficient;
@@ -68,11 +67,6 @@ async function listerPourSaisie(req, res, next) {
   }
 }
 
-/**
- * POST /api/notes/saisie
- * Body: { classeId, matiereId, periode, notes: [{ eleveId, valeur }] }
- * Enregistre (ou met à jour) les notes de toute une classe en une seule fois.
- */
 async function enregistrerLot(req, res, next) {
   try {
     const { classeId, matiereId, periode, notes } = req.body;
@@ -84,7 +78,6 @@ async function enregistrerLot(req, res, next) {
       return res.status(400).json({ error: `periode doit être entre ${PERIODE_MIN} et ${PERIODE_MAX}` });
     }
 
-    // Vérifications d'appartenance (sécurité multi-site)
     const classe = await prisma.classe.findFirst({
       where: { id: classeId, etablissementId: req.user.etablissementId },
     });
@@ -95,14 +88,17 @@ async function enregistrerLot(req, res, next) {
     });
     if (!matiere) return res.status(404).json({ error: 'Matière introuvable' });
 
-    // Valide chaque note avant d'écrire quoi que ce soit
+    const autorise = await enseignantEnseigneCetteMatiereDansCetteClasse(req, classeId, matiereId);
+    if (!autorise) {
+      return res.status(403).json({ error: "Vous n'êtes pas assigné à cette matière dans cette classe" });
+    }
+
     for (const n of notes) {
       if (typeof n.valeur !== 'number' || n.valeur < 0 || n.valeur > 20) {
         return res.status(400).json({ error: `Note invalide pour l'élève ${n.eleveId} : doit être entre 0 et 20` });
       }
     }
 
-    // Vérifie que tous les élèves concernés sont bien inscrits dans cette classe
     const eleveIds = notes.map((n) => n.eleveId);
     const inscriptionsValides = await prisma.inscription.findMany({
       where: { classeId, eleveId: { in: eleveIds }, statut: 'ACTIVE' },
@@ -114,7 +110,6 @@ async function enregistrerLot(req, res, next) {
       return res.status(400).json({ error: `Élève(s) non inscrit(s) dans cette classe : ${idsInvalides.join(', ')}` });
     }
 
-    // Upsert de chaque note (met à jour si elle existe déjà pour eleve+matiere+periode, sinon crée)
     const resultats = await prisma.$transaction(
       notes.map((n) =>
         prisma.note.upsert({
@@ -133,10 +128,6 @@ async function enregistrerLot(req, res, next) {
   }
 }
 
-/**
- * GET /api/notes/eleve/:eleveId?periode=
- * Toutes les notes d'un élève (utilisé plus tard pour générer le bulletin).
- */
 async function listerParEleve(req, res, next) {
   try {
     const { periode } = req.query;

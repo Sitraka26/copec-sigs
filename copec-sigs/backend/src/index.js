@@ -21,6 +21,9 @@ const anneeScolaireRoutes = require('./routes/anneeScolaire.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const rateLimit = require('express-rate-limit');
 const baremeRoutes = require('./routes/bareme.routes');
+const rapportRoutes = require('./routes/rapport.routes');
+const messageRoutes = require('./routes/message.routes');
+
 
 const app = express();
 
@@ -56,6 +59,8 @@ app.use('/api/emplois-du-temps', emploiDuTempsRoutes);
 app.use('/api/annees-scolaires', anneeScolaireRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/baremes', baremeRoutes);
+app.use('/api/rapports', rapportRoutes);
+app.use('/api/messages', messageRoutes);
 
 app.use(errorHandler);
 

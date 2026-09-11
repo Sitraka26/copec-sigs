@@ -1,17 +1,16 @@
 const prisma = require('../config/prisma');
-
-// Toutes les requêtes sont automatiquement filtrées par l'établissement
-// de l'utilisateur connecté (req.user.etablissementId) — jamais les deux
-// sites (Isaha / Mangabe) ne doivent se mélanger.
+const { obtenirClasseIdsEnseignant } = require('../utils/enseignant.utils');
 
 async function lister(req, res, next) {
   try {
     const { anneeScolaireId } = req.query;
+    const classeIdsEnseignant = await obtenirClasseIdsEnseignant(req);
 
     const classes = await prisma.classe.findMany({
       where: {
         etablissementId: req.user.etablissementId,
         ...(anneeScolaireId ? { anneeScolaireId } : {}),
+        ...(classeIdsEnseignant !== null ? { id: { in: classeIdsEnseignant } } : {}),
       },
       include: {
         niveau: true,
@@ -37,8 +36,13 @@ async function obtenirParId(req, res, next) {
         inscriptions: { include: { eleve: true } },
       },
     });
-
     if (!classe) return res.status(404).json({ error: 'Classe introuvable' });
+
+    const classeIdsEnseignant = await obtenirClasseIdsEnseignant(req);
+    if (classeIdsEnseignant !== null && !classeIdsEnseignant.includes(classe.id)) {
+      return res.status(403).json({ error: "Vous n'enseignez pas dans cette classe" });
+    }
+
     res.json(classe);
   } catch (err) {
     next(err);
@@ -48,22 +52,13 @@ async function obtenirParId(req, res, next) {
 async function creer(req, res, next) {
   try {
     const { nom, niveauId, anneeScolaireId, enseignantPrincipal } = req.body;
-
     if (!nom || !niveauId || !anneeScolaireId) {
       return res.status(400).json({ error: 'Champs obligatoires manquants (nom, niveauId, anneeScolaireId)' });
     }
-
     const classe = await prisma.classe.create({
-      data: {
-        etablissementId: req.user.etablissementId,
-        nom,
-        niveauId,
-        anneeScolaireId,
-        enseignantPrincipal,
-      },
+      data: { etablissementId: req.user.etablissementId, nom, niveauId, anneeScolaireId, enseignantPrincipal },
       include: { niveau: true },
     });
-
     res.status(201).json(classe);
   } catch (err) {
     if (err.code === 'P2002') {
@@ -75,20 +70,16 @@ async function creer(req, res, next) {
 
 async function modifier(req, res, next) {
   try {
-    // On vérifie d'abord que la classe appartient bien à l'établissement de l'utilisateur
     const existante = await prisma.classe.findFirst({
       where: { id: req.params.id, etablissementId: req.user.etablissementId },
     });
     if (!existante) return res.status(404).json({ error: 'Classe introuvable' });
-
     const { nom, niveauId, enseignantPrincipal } = req.body;
-
     const classe = await prisma.classe.update({
       where: { id: req.params.id },
       data: { nom, niveauId, enseignantPrincipal },
       include: { niveau: true },
     });
-
     res.json(classe);
   } catch (err) {
     next(err);
@@ -102,11 +93,9 @@ async function supprimer(req, res, next) {
       include: { _count: { select: { inscriptions: true } } },
     });
     if (!existante) return res.status(404).json({ error: 'Classe introuvable' });
-
     if (existante._count.inscriptions > 0) {
       return res.status(409).json({ error: 'Impossible de supprimer : des élèves sont inscrits dans cette classe' });
     }
-
     await prisma.classe.delete({ where: { id: req.params.id } });
     res.status(204).send();
   } catch (err) {
