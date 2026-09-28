@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const prisma = require('../config/prisma');
 
 async function lister(req, res, next) {
@@ -25,7 +26,6 @@ async function creer(req, res, next) {
       return res.status(400).json({ error: 'nom, prenom et email sont requis' });
     }
 
-   const crypto = require('crypto'); // à ajouter en haut du fichier si absent
 const motDePasseTemporaire = crypto.randomBytes(6).toString('base64url'); // ex: "aZ3f-Qk2"
     const motDePasseHash = await bcrypt.hash(motDePasseTemporaire, 10);
 
@@ -97,5 +97,83 @@ async function assignerMatieres(req, res, next) {
   }
 }
 
-module.exports = { lister, creer, assignerMatieres };
+async function mettreAJour(req, res, next) {
+  try {
+    const { nom, prenom, email, telephone } = req.body;
+    const enseignant = await prisma.enseignant.findFirst({
+      where: { id: req.params.id, utilisateur: { etablissementId: req.user.etablissementId } },
+      include: { utilisateur: true },
+    });
+    if (!enseignant) return res.status(404).json({ error: 'Enseignant introuvable' });
+
+    // Met à jour l'utilisateur lié (nom/prenom/email) et le profil enseignant (telephone)
+    if (nom || prenom || email) {
+      try {
+        await prisma.utilisateur.update({
+          where: { id: enseignant.utilisateurId },
+          data: { nom, prenom, email },
+        });
+      } catch (err) {
+        if (err.code === 'P2002') return res.status(409).json({ error: 'Un utilisateur avec cet email existe déjà' });
+        throw err;
+      }
+    }
+
+    const enseignantMisAJour = await prisma.enseignant.update({
+      where: { id: enseignant.id },
+      data: { telephone },
+      include: { utilisateur: true, matieres: { include: { matiere: true } } },
+    });
+
+    res.json(enseignantMisAJour);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function supprimer(req, res, next) {
+  try {
+    const enseignant = await prisma.enseignant.findFirst({
+      where: { id: req.params.id, utilisateur: { etablissementId: req.user.etablissementId } },
+      include: { utilisateur: true },
+    });
+    if (!enseignant) return res.status(404).json({ error: 'Enseignant introuvable' });
+
+    // Empêche la suppression si l'enseignant a des créneaux d'emploi du temps
+    const seances = await prisma.seance.count({ where: { enseignantId: enseignant.id } });
+    if (seances > 0) return res.status(400).json({ error: 'Impossible de supprimer: l\'enseignant a des créneaux d\'emploi du temps' });
+
+    await prisma.$transaction([
+      prisma.enseignantMatiere.deleteMany({ where: { enseignantId: enseignant.id } }),
+      prisma.enseignant.delete({ where: { id: enseignant.id } }),
+      prisma.utilisateur.delete({ where: { id: enseignant.utilisateurId } }),
+    ]);
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function reinitialiserMotDePasse(req, res, next) {
+  try {
+    const enseignant = await prisma.enseignant.findFirst({
+      where: { id: req.params.id, utilisateur: { etablissementId: req.user.etablissementId } },
+      include: { utilisateur: true },
+    });
+    if (!enseignant) return res.status(404).json({ error: 'Enseignant introuvable' });
+
+    const motDePasseTemporaire = crypto.randomBytes(6).toString('base64url');
+    const motDePasseHash = await bcrypt.hash(motDePasseTemporaire, 10);
+
+    await prisma.utilisateur.update({ where: { id: enseignant.utilisateurId }, data: { motDePasse: motDePasseHash } });
+
+    // Retourne le mot de passe temporaire pour l'afficher une seule fois côté admin
+    res.json({ motDePasseTemporaire });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { lister, creer, assignerMatieres, mettreAJour, supprimer, reinitialiserMotDePasse };
 

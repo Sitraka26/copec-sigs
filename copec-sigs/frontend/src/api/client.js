@@ -12,4 +12,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Si le token est expiré ou invalide (401), on nettoie la session et on
+// renvoie automatiquement vers la page de connexion, au lieu de laisser
+// l'application dans un état cassé avec des erreurs en console.
+api.interceptors.response.use(
+  (reponse) => reponse,
+  (erreur) => {
+    if (erreur.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('utilisateur');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(erreur);
+  }
+);
+
 export default api;

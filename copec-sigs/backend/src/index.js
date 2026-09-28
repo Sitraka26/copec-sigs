@@ -23,8 +23,11 @@ const rateLimit = require('express-rate-limit');
 const baremeRoutes = require('./routes/bareme.routes');
 const rapportRoutes = require('./routes/rapport.routes');
 const messageRoutes = require('./routes/message.routes');
-
-
+const alerteRoutes = require('./routes/alerte.routes');
+const auditRoutes = require('./routes/audit.routes');
+const certificatRoutes = require('./routes/certificat.routes');
+const path = require('path');
+const disciplineRoutes = require('./routes/discipline.routes');
 const app = express();
 
 app.use(cors());
@@ -61,6 +64,11 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/baremes', baremeRoutes);
 app.use('/api/rapports', rapportRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/alertes', alerteRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/certificats', certificatRoutes);
+app.use('/static', express.static(path.join(__dirname, '../public')));
+app.use('/api/disciplines', disciplineRoutes);
 
 app.use(errorHandler);
 

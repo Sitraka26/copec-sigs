@@ -8,8 +8,10 @@ async function calculerMoyenneEleve(eleveId, periode, niveauId, etablissementId)
   const notes = await prisma.note.findMany({ where: { eleveId, periode } });
   if (notes.length === 0) return null;
   const coefficients = await obtenirCoefficientsPourNiveau(niveauId, etablissementId);
-  const totalPondere = notes.reduce((acc, n) => acc + n.valeur * (coefficients[n.matiereId] ?? 1), 0);
-  const totalCoefficients = notes.reduce((acc, n) => acc + (coefficients[n.matiereId] ?? 1), 0);
+  const notesProgramme = notes.filter((note) => Object.prototype.hasOwnProperty.call(coefficients, note.matiereId));
+  if (notesProgramme.length === 0) return null;
+  const totalPondere = notesProgramme.reduce((acc, n) => acc + n.valeur * coefficients[n.matiereId], 0);
+  const totalCoefficients = notesProgramme.reduce((acc, n) => acc + coefficients[n.matiereId], 0);
   if (totalCoefficients === 0) return null;
   return Math.round((totalPondere / totalCoefficients) * 100) / 100;
 }
@@ -126,7 +128,7 @@ async function detailBulletinEleve(req, res, next) {
     const coefficients = niveauId ? await obtenirCoefficientsPourNiveau(niveauId, req.user.etablissementId) : {};
 
     const notes = await prisma.note.findMany({
-      where: { eleveId, periode: p },
+      where: { eleveId, periode: p, matiereId: { in: Object.keys(coefficients) } },
       include: { matiere: true },
       orderBy: { matiere: { nom: 'asc' } },
     });
@@ -174,12 +176,12 @@ async function genererPdfEleve(req, res, next) {
 
     const anneeScolaire = await prisma.anneeScolaire.findUnique({ where: { id: anneeScolaireId } });
 
+    const coefficients = await obtenirCoefficientsPourNiveau(inscription.classe.niveauId, req.user.etablissementId);
     const matieresBrutes = await prisma.matiere.findMany({
-      where: { etablissementId: req.user.etablissementId },
+      where: { etablissementId: req.user.etablissementId, id: { in: Object.keys(coefficients) } },
       orderBy: { nom: 'asc' },
     });
 
-    const coefficients = await obtenirCoefficientsPourNiveau(inscription.classe.niveauId, req.user.etablissementId);
     const matieres = matieresBrutes.map((m) => ({ ...m, coefficient: coefficients[m.id] ?? m.coefficient }));
 
     const notes = await prisma.note.findMany({ where: { eleveId } });

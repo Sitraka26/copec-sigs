@@ -55,6 +55,17 @@ async function creer(req, res, next) {
         sexe, adresse, contactUrgenceNom, contactUrgenceTel,
       },
     });
+        // Audit
+    const { enregistrerAudit } = require('../services/audit.service');
+    await enregistrerAudit({
+      etablissementId: req.user.etablissementId,
+      utilisateurId: req.user.id,
+      action: 'CREATE_ELEVE',
+      entite: 'Eleve',
+      entiteId: eleve.id,
+      details: { matricule: eleve.matricule, nom: eleve.nom, prenom: eleve.prenom },
+      ip: req.ip,
+    });
     res.status(201).json(eleve);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'Ce matricule existe déjà' });
@@ -76,4 +87,16 @@ async function modifier(req, res, next) {
   }
 }
 
-module.exports = { lister, obtenirParId, creer, modifier };
+async function supprimer(req, res, next) {
+  try {
+    const existant = await prisma.eleve.findFirst({ where: { id: req.params.id, etablissementId: req.user.etablissementId } });
+    if (!existant) return res.status(404).json({ error: "Élève introuvable" });
+    // Optionnel: vérifier contraintes (paiements, inscriptions...) avant suppression. Ici suppression simple.
+    await prisma.eleve.delete({ where: { id: req.params.id } });
+    res.json({ message: 'Élève supprimé' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { lister, obtenirParId, creer, modifier, supprimer };

@@ -100,14 +100,55 @@ async function enregistrerLot(req, res, next) {
       });
 
       let notification = null;
-      const etaitDejaAbsent = statutAvant[p.eleveId] === 'ABSENT';
-      if (p.statut === 'ABSENT' && !etaitDejaAbsent) {
-        const eleve = await prisma.eleve.findUnique({ where: { id: p.eleveId } });
-        const message = `Bonjour, votre enfant ${eleve.prenom} ${eleve.nom} est marqué(e) absent(e) aujourd'hui ${new Date(date).toLocaleDateString('fr-FR')} à ${classe.nom}. Merci de nous contacter si besoin.`;
-        notification = await envoyerSms(eleve.contactUrgenceTel, message);
+      let alerteAbsence = null;
+      if (p.statut === 'ABSENT') {
+        const historique = await prisma.presence.findMany({
+          where: { eleveId: p.eleveId },
+          orderBy: { date: 'desc' },
+          select: { date: true, statut: true },
+        });
+        let absencesConsecutives = 0;
+        for (const historiquePresence of historique) {
+          if (historiquePresence.statut !== 'ABSENT') break;
+          absencesConsecutives += 1;
+        }
+
+        if (absencesConsecutives === 3) {
+          const eleve = await prisma.eleve.findUnique({ where: { id: p.eleveId } });
+          const message = `Bonjour, votre enfant ${eleve.prenom} ${eleve.nom} compte 3 absences consécutives à ${classe.nom}. Merci de contacter l'école.`;
+          notification = await envoyerSms(eleve.contactUrgenceTel, message);
+        }
+
+        if (absencesConsecutives >= 3) {
+          const eleve = await prisma.eleve.findUnique({ where: { id: p.eleveId } });
+          const debutJour = new Date(`${date}T00:00:00`);
+          const finJour = new Date(debutJour);
+          finJour.setDate(finJour.getDate() + 1);
+          const dejaEnvoyee = await prisma.message.findFirst({
+            where: {
+              etablissementId: req.user.etablissementId,
+              destinataireRole: 'DIRECTEUR',
+              dateEnvoi: { gte: debutJour, lt: finJour },
+              contenu: { contains: `Alerte présence : ${eleve.prenom} ${eleve.nom}` },
+            },
+            select: { id: true },
+          });
+
+          if (!dejaEnvoyee) {
+            const contenu = `Alerte présence : ${eleve.prenom} ${eleve.nom} compte ${absencesConsecutives} absences consécutives dans la classe ${classe.nom}. Merci de contacter la famille.`;
+            alerteAbsence = await prisma.message.create({
+              data: {
+                etablissementId: req.user.etablissementId,
+                expediteurId: req.user.id,
+                destinataireRole: 'DIRECTEUR',
+                contenu,
+              },
+            });
+          }
+        }
       }
 
-      resultats.push({ eleveId: p.eleveId, presence, notification });
+      resultats.push({ eleveId: p.eleveId, presence, notification, alerteAbsence });
     }
 
     res.json({ enregistrees: resultats.length, resultats });

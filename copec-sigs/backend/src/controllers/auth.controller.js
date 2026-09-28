@@ -4,12 +4,19 @@ const prisma = require('../config/prisma');
 
 async function login(req, res, next) {
   try {
-    const { email, motDePasse } = req.body;
-    if (!email || !motDePasse) {
+    const emailNormalise = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const { motDePasse } = req.body;
+    if (!emailNormalise || !motDePasse) {
       return res.status(400).json({ error: 'Email et mot de passe requis' });
     }
+    if (emailNormalise.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNormalise)) {
+      return res.status(400).json({ error: 'Veuillez saisir une adresse email valide' });
+    }
+    if (typeof motDePasse !== 'string' || motDePasse.length < 6 || motDePasse.length > 128) {
+      return res.status(400).json({ error: 'Mot de passe invalide' });
+    }
 
-    const utilisateur = await prisma.utilisateur.findUnique({ where: { email } });
+    const utilisateur = await prisma.utilisateur.findUnique({ where: { email: emailNormalise } });
     if (!utilisateur || !utilisateur.actif) {
       return res.status(401).json({ error: 'Identifiants incorrects' });
     }
@@ -24,6 +31,17 @@ async function login(req, res, next) {
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
+        // Audit
+    const { enregistrerAudit } = require('../services/audit.service');
+    await enregistrerAudit({
+      etablissementId: utilisateur.etablissementId,
+      utilisateurId: utilisateur.id,
+      action: 'LOGIN',
+      entite: 'Utilisateur',
+      entiteId: utilisateur.id,
+      details: { role: utilisateur.role },
+      ip: req.ip,
+    });
 
     res.json({
       token,

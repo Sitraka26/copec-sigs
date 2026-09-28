@@ -11,7 +11,6 @@ function debutDuMois() {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 }
 
-// Rôles qui n'ont RIEN à voir avec les chiffres financiers de l'école
 const ROLES_SANS_ACCES_FINANCES = ['ENSEIGNANT', 'SURVEILLANT'];
 
 async function obtenirStatistiques(req, res, next) {
@@ -111,6 +110,7 @@ async function obtenirIndicateurs(req, res, next) {
       where: { anneeScolaireId: anneeActive.id, statut: 'ACTIVE' },
       include: { eleve: true, classe: true },
     });
+
     const absences = await prisma.presence.findMany({
       where: {
         eleve: { etablissementId }, statut: 'ABSENT', justifie: false,
@@ -135,6 +135,44 @@ async function obtenirIndicateurs(req, res, next) {
       }
     }
 
+    // Détection des absences CONSÉCUTIVES (3 jours d'affilée ou plus)
+    const toutesPresences = await prisma.presence.findMany({
+      where: { eleve: { etablissementId }, date: { gte: anneeActive.dateDebut, lte: anneeActive.dateFin } },
+      orderBy: { date: 'desc' },
+    });
+    const presencesParEleve = {};
+    toutesPresences.forEach((p) => {
+      if (!presencesParEleve[p.eleveId]) presencesParEleve[p.eleveId] = [];
+      presencesParEleve[p.eleveId].push(p);
+    });
+
+    const elevesAAppeler = [];
+    for (const insc of inscriptions) {
+      const historique = presencesParEleve[insc.eleve.id] || [];
+      let joursConsecutifs = 0;
+      for (let index = 0; index < historique.length; index += 1) {
+        const presence = historique[index];
+        const presencePrecedente = historique[index - 1];
+        const ecartJours = presencePrecedente
+          ? Math.round((new Date(presencePrecedente.date).setHours(0, 0, 0, 0) - new Date(presence.date).setHours(0, 0, 0, 0)) / 86400000)
+          : 1;
+        if (presence.statut !== 'ABSENT' || (presencePrecedente && ecartJours !== 1)) break;
+        joursConsecutifs++;
+      }
+      if (joursConsecutifs >= 3) {
+        elevesAAppeler.push({
+          eleveId: insc.eleve.id,
+          nom: insc.eleve.nom,
+          prenom: insc.eleve.prenom,
+          classe: insc.classe.nom,
+          joursConsecutifs,
+          contactUrgenceNom: insc.eleve.contactUrgenceNom,
+          contactUrgenceTel: insc.eleve.contactUrgenceTel,
+        });
+      }
+    }
+    elevesAAppeler.sort((a, b) => b.joursConsecutifs - a.joursConsecutifs);
+
     const notes = await prisma.note.findMany({ where: { eleve: { etablissementId } }, include: { matiere: true } });
     const notesParMatiere = {};
     notes.forEach((n) => {
@@ -150,8 +188,14 @@ async function obtenirIndicateurs(req, res, next) {
       evolutionMoyennes,
       palmares,
       elevesARisque,
+      elevesAAppeler,
       matierePlusDifficile: moyennesMatieres[0] || null,
       matierePlusForte: moyennesMatieres.length > 0 ? moyennesMatieres[moyennesMatieres.length - 1] : null,
+      criteresSurveillance: [
+        'Moyenne générale du dernier bulletin inférieure à 10/20',
+        'Au moins 3 absences non justifiées pendant l’année scolaire active',
+        'Appel urgent : au moins 3 absences consécutives enregistrées',
+      ],
     };
 
     if (accesFinances) {

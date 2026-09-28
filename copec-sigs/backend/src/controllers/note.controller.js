@@ -121,6 +121,16 @@ async function enregistrerLot(req, res, next) {
         })
       )
     );
+        // Audit
+    const { enregistrerAudit } = require('../services/audit.service');
+    await enregistrerAudit({
+      etablissementId: req.user.etablissementId,
+      utilisateurId: req.user.id,
+      action: 'SAISIE_NOTES',
+      entite: 'Note',
+      details: { nombre: notes?.length || presences?.length || 0, classeId: req.body.classeId, periode: req.body.periode },
+      ip: req.ip,
+    });
 
     res.json({ enregistrees: resultats.length, notes: resultats });
   } catch (err) {
@@ -152,4 +162,98 @@ async function listerParEleve(req, res, next) {
   }
 }
 
-module.exports = { listerPourSaisie, enregistrerLot, listerParEleve };
+async function listerReclamations(req, res, next) {
+  try {
+    const estGestionnaire = ['ADMIN', 'DIRECTEUR', 'SECRETAIRE'].includes(req.user.role);
+    const reclamations = await prisma.reclamationNote.findMany({
+      where: {
+        etablissementId: req.user.etablissementId,
+        ...(estGestionnaire ? {} : { auteurId: req.user.id }),
+      },
+      include: {
+        eleve: { select: { id: true, matricule: true, nom: true, prenom: true } },
+        matiere: { select: { id: true, nom: true } },
+        auteur: { select: { id: true, nom: true, prenom: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(reclamations);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function creerReclamation(req, res, next) {
+  try {
+    const { eleveId, matiereId, periode, motif } = req.body;
+    if (!eleveId || !matiereId || !periode || !motif?.trim()) {
+      return res.status(400).json({ error: 'eleveId, matiereId, periode et motif sont requis' });
+    }
+    if (!periodeValide(periode)) {
+      return res.status(400).json({ error: `periode doit être entre ${PERIODE_MIN} et ${PERIODE_MAX}` });
+    }
+
+    const [eleve, matiere] = await Promise.all([
+      prisma.eleve.findFirst({ where: { id: eleveId, etablissementId: req.user.etablissementId } }),
+      prisma.matiere.findFirst({ where: { id: matiereId, etablissementId: req.user.etablissementId } }),
+    ]);
+    if (!eleve || !matiere) return res.status(404).json({ error: 'Élève ou matière introuvable' });
+
+    const reclamation = await prisma.reclamationNote.create({
+      data: {
+        etablissementId: req.user.etablissementId,
+        auteurId: req.user.id,
+        eleveId,
+        matiereId,
+        periode: Number(periode),
+        motif: motif.trim(),
+      },
+      include: {
+        eleve: { select: { matricule: true, nom: true, prenom: true } },
+        matiere: { select: { nom: true } },
+      },
+    });
+    res.status(201).json(reclamation);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function traiterReclamation(req, res, next) {
+  try {
+    if (!['ADMIN', 'DIRECTEUR', 'SECRETAIRE'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Seuls les responsables peuvent traiter une réclamation' });
+    }
+    const { statut, reponse } = req.body;
+    const statutsAutorises = ['OUVERTE', 'EN_COURS', 'TRAITEE', 'REJETEE'];
+    if (!statutsAutorises.includes(statut)) {
+      return res.status(400).json({ error: 'Statut de réclamation invalide' });
+    }
+    const existante = await prisma.reclamationNote.findFirst({
+      where: { id: req.params.id, etablissementId: req.user.etablissementId },
+    });
+    if (!existante) return res.status(404).json({ error: 'Réclamation introuvable' });
+
+    const reclamation = await prisma.reclamationNote.update({
+      where: { id: existante.id },
+      data: { statut, reponse: reponse?.trim() || null },
+      include: {
+        eleve: { select: { matricule: true, nom: true, prenom: true } },
+        matiere: { select: { nom: true } },
+        auteur: { select: { nom: true, prenom: true } },
+      },
+    });
+    res.json(reclamation);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  listerPourSaisie,
+  enregistrerLot,
+  listerParEleve,
+  listerReclamations,
+  creerReclamation,
+  traiterReclamation,
+};

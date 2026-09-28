@@ -36,6 +36,8 @@ async function calculerSolde(eleveId, anneeScolaireId, etablissementId) {
     where: { eleveId, anneeScolaireId, statut: 'PAYE' },
   });
   const paye = paiements.reduce((acc, p) => acc + p.montant, 0);
+  const droitPaye = paiements.filter((p) => p.typeFrais === 'DROIT').reduce((acc, p) => acc + p.montant, 0);
+  const ecolagePaye = paiements.filter((p) => p.typeFrais === 'ECOLAGE').reduce((acc, p) => acc + p.montant, 0);
 
   return {
     niveau: inscription.classe.niveau.libelle,
@@ -46,6 +48,12 @@ async function calculerSolde(eleveId, anneeScolaireId, etablissementId) {
     paye,
     reste: attendu !== null ? Math.max(0, attendu - paye) : null,
     soldeAJour: attendu !== null ? paye >= attendu : null,
+    droitAttendu: bareme?.droit ?? null,
+    droitPaye,
+    droitReste: bareme ? Math.max(0, bareme.droit - droitPaye) : null,
+    ecolageAttendu: bareme?.ecolage ?? null,
+    ecolagePaye,
+    ecolageReste: bareme ? Math.max(0, bareme.ecolage - ecolagePaye) : null,
   };
 }
 
@@ -96,6 +104,17 @@ async function creer(req, res, next) {
     const paiement = await prisma.paiement.create({
       data: { eleveId, anneeScolaireId, typeFrais, montant, moyenPaiement, numeroRecu },
     });
+        // Audit
+    const { enregistrerAudit } = require('../services/audit.service');
+    await enregistrerAudit({
+      etablissementId: req.user.etablissementId,
+      utilisateurId: req.user.id,
+      action: 'CREATE_PAIEMENT',
+      entite: 'Paiement',
+      entiteId: paiement.id,
+      details: { eleveId, montant, typeFrais, numeroRecu: paiement.numeroRecu },
+      ip: req.ip,
+    });
 
     res.status(201).json(paiement);
   } catch (err) {
@@ -121,6 +140,50 @@ async function lister(req, res, next) {
     });
 
     res.json(paiements);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listerSituations(req, res, next) {
+  try {
+    const { anneeScolaireId } = req.query;
+    if (!anneeScolaireId) return res.status(400).json({ error: 'anneeScolaireId requis' });
+
+    const inscriptions = await prisma.inscription.findMany({
+      where: { anneeScolaireId, statut: 'ACTIVE', classe: { etablissementId: req.user.etablissementId } },
+      include: { eleve: true, classe: { include: { niveau: true } } },
+      orderBy: [{ classe: { nom: 'asc' } }, { eleve: { nom: 'asc' } }],
+    });
+    const apresLe15 = new Date().getDate() >= 15;
+    const situations = [];
+
+    for (const inscription of inscriptions) {
+      const bareme = await prisma.baremeFrais.findFirst({
+        where: { niveauId: inscription.classe.niveauId, anneeScolaireId },
+      });
+      const paiements = await prisma.paiement.findMany({
+        where: { eleveId: inscription.eleveId, anneeScolaireId, statut: 'PAYE' },
+        select: { montant: true, typeFrais: true },
+      });
+      const droitPaye = paiements.filter((p) => p.typeFrais === 'DROIT').reduce((s, p) => s + p.montant, 0);
+      const ecolagePaye = paiements.filter((p) => p.typeFrais === 'ECOLAGE').reduce((s, p) => s + p.montant, 0);
+      const droitReste = bareme ? Math.max(0, bareme.droit - droitPaye) : null;
+      const ecolageReste = bareme ? Math.max(0, bareme.ecolage - ecolagePaye) : null;
+
+      situations.push({
+        eleveId: inscription.eleveId,
+        nom: inscription.eleve.nom,
+        prenom: inscription.eleve.prenom,
+        matricule: inscription.eleve.matricule,
+        classe: inscription.classe.nom,
+        droitReste,
+        ecolageReste,
+        droitImpayé: droitReste === null || droitReste > 0,
+        ecolageAlerte: apresLe15 && ecolageReste !== null && ecolageReste > 0,
+      });
+    }
+    res.json({ apresLe15, situations });
   } catch (err) {
     next(err);
   }
@@ -166,4 +229,4 @@ async function genererRecuPdf(req, res, next) {
   }
 }
 
-module.exports = { creer, lister, obtenirSolde, calculerSolde, genererRecuPdf };
+module.exports = { creer, lister, listerSituations, obtenirSolde, calculerSolde, genererRecuPdf };

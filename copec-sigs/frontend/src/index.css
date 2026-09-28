@@ -1,3 +1,35 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-800 antialiased;
+    background-image: radial-gradient(circle at 10% 10%, rgba(37, 99, 235, .06), transparent 28%), radial-gradient(circle at 90% 90%, rgba(15, 45, 93, .06), transparent 30%);
+  }
+  button, input, select, textarea {
+    @apply transition-colors duration-150;
+  }
+}
+
+@layer components {
+  button:not(:disabled) {
+    @apply active:scale-[0.98] shadow-sm;
+  }
+  button[type="submit"], button.bg-slate-800, button.bg-blue-600 {
+    @apply bg-gradient-to-r from-blue-700 to-blue-500 border-0 shadow-md shadow-blue-900/20 hover:from-blue-800 hover:to-blue-600;
+  }
+  input, select, textarea {
+    @apply border-slate-300 rounded-xl bg-white/90 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 focus:outline-none;
+  }
+  table thead {
+    @apply bg-slate-50 text-slate-600;
+  }
+  table th {
+    @apply font-semibold text-xs uppercase tracking-wide;
+  }
+  .bg-white.border.rounded,
+  .bg-white.border.rounded-lg {
+    @apply shadow-sm;
+  }
+}

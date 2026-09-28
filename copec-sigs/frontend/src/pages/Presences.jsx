@@ -24,6 +24,10 @@ export default function Presences() {
   const [enregistrement, setEnregistrement] = useState(false);
   const [erreur, setErreur] = useState('');
   const [notifications, setNotifications] = useState(null);
+  const [recherche, setRecherche] = useState('');
+  const [filtreStatut, setFiltreStatut] = useState('TOUS');
+  const [alertesAbsence, setAlertesAbsence] = useState([]);
+  const [statutsEnregistres, setStatutsEnregistres] = useState({});
 
   useEffect(() => {
     api
@@ -48,13 +52,20 @@ export default function Presences() {
         data.eleves.forEach((e) => {
           initiaux[e.eleveId] = e.statut;
         });
-        setStatuts(initiaux);
+        const brouillon = sessionStorage.getItem(`presences:${classeId}:${date}`);
+        const statutsBrouillon = brouillon ? JSON.parse(brouillon) : initiaux;
+        setStatutsEnregistres(initiaux);
+        setStatuts(statutsBrouillon);
       })
       .catch((err) => setErreur(err.response?.data?.error || 'Erreur de chargement de la grille'));
   }, [classeId, date]);
 
   function majStatut(eleveId, statut) {
-    setStatuts((s) => ({ ...s, [eleveId]: statut }));
+    setStatuts((s) => {
+      const suivants = { ...s, [eleveId]: statut };
+      sessionStorage.setItem(`presences:${classeId}:${date}`, JSON.stringify(suivants));
+      return suivants;
+    });
   }
 
   async function enregistrer() {
@@ -67,6 +78,10 @@ export default function Presences() {
 
       const smsEnvoyes = data.resultats.filter((r) => r.notification?.envoye).length;
       const smsEchoues = data.resultats.filter((r) => r.notification && !r.notification.envoye);
+      const alertes = data.resultats.filter((r) => r.alerteAbsence);
+      sessionStorage.removeItem(`presences:${classeId}:${date}`);
+      setStatutsEnregistres({ ...statuts });
+      setAlertesAbsence(alertes);
       setNotifications({ smsEnvoyes, smsEchoues });
     } catch (err) {
       setErreur(err.response?.data?.error || "Erreur lors de l'enregistrement");
@@ -102,11 +117,23 @@ export default function Presences() {
       </div>
 
       {erreur && <p className="text-red-600 text-sm mb-4">{erreur}</p>}
+      {JSON.stringify(statuts) !== JSON.stringify(statutsEnregistres) && (
+        <p className="mb-4 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+          Modifications non enregistrées. Clique sur « Enregistrer les présences » avant de quitter cette page.
+        </p>
+      )}
 
       {notifications && (
         <div className="mb-4 text-sm">
           {notifications.smsEnvoyes > 0 && (
             <p className="text-green-700">✓ {notifications.smsEnvoyes} SMS envoyé(s) aux parents.</p>
+          )}
+
+          {alertesAbsence.length > 0 && (
+            <div className="mb-4 rounded border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">
+              <p className="font-medium">Alerte envoyée à la direction</p>
+              <p>{alertesAbsence.length} élève(s) ont atteint au moins 3 absences consécutives. Un message interne a été créé dans Messages.</p>
+            </div>
           )}
           {notifications.smsEchoues.length > 0 && (
             <div className="text-orange-700 mt-1">
@@ -127,6 +154,18 @@ export default function Presences() {
 
       {grille && grille.eleves.length > 0 && (
         <>
+          <div className="flex flex-wrap gap-3 mb-4">
+            <input
+              className="border rounded px-3 py-2 text-sm"
+              placeholder="Rechercher un élève..."
+              value={recherche}
+              onChange={(e) => setRecherche(e.target.value)}
+            />
+            <select className="border rounded px-3 py-2 text-sm" value={filtreStatut} onChange={(e) => setFiltreStatut(e.target.value)}>
+              <option value="TOUS">Tous les statuts</option>
+              {STATUTS.map((s) => <option key={s} value={s}>{LIBELLES_STATUT[s]}</option>)}
+            </select>
+          </div>
           <div className="bg-white rounded border overflow-hidden mb-4">
             <table className="w-full text-sm">
               <thead className="bg-gray-100 text-left">
@@ -138,7 +177,10 @@ export default function Presences() {
                 </tr>
               </thead>
               <tbody>
-                {grille.eleves.map((eleve) => (
+                {grille.eleves
+                  .filter((eleve) => `${eleve.nom} ${eleve.prenom}`.toLowerCase().includes(recherche.toLowerCase().trim()))
+                  .filter((eleve) => filtreStatut === 'TOUS' || statuts[eleve.eleveId] === filtreStatut)
+                  .map((eleve) => (
                   <tr key={eleve.eleveId} className="border-t hover:bg-gray-50">
                     <td className="px-4 py-2">{eleve.matricule}</td>
                     <td className="px-4 py-2">{eleve.nom}</td>
