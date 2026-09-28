@@ -8,7 +8,7 @@ export default function Enseignants() {
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState('');
   const [message, setMessage] = useState('');
-  const [mdpTemporaire, setMdpTemporaire] = useState(null); // { email, mdp }
+  const [mdpTemporaire, setMdpTemporaire] = useState(null);
 
   const [modaleAjout, setModaleAjout] = useState(false);
   const [modaleVoir, setModaleVoir] = useState(false);
@@ -144,7 +144,11 @@ export default function Enseignants() {
   }
 
   async function reinitialiser(ens) {
-    if (!confirm(`Réinitialiser le mot de passe de ${ens.utilisateur.nom} ${ens.utilisateur.prenom} ?`)) {
+    if (
+      !confirm(
+        `Réinitialiser le mot de passe de ${ens.utilisateur.nom} ${ens.utilisateur.prenom} ?`
+      )
+    ) {
       return;
     }
     try {
@@ -160,7 +164,11 @@ export default function Enseignants() {
   }
 
   async function supprimer(ens) {
-    if (!confirm(`Supprimer définitivement ${ens.utilisateur.nom} ${ens.utilisateur.prenom} ?`)) {
+    if (
+      !confirm(
+        `Supprimer définitivement ${ens.utilisateur.nom} ${ens.utilisateur.prenom} ?`
+      )
+    ) {
       return;
     }
     try {
@@ -183,7 +191,9 @@ export default function Enseignants() {
         (e.matieres || []).map((m) => m.matiere?.nom || m.matiereId).join('; '),
       ]);
     }
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = rows
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -195,36 +205,61 @@ export default function Enseignants() {
     URL.revokeObjectURL(url);
   }
 
+  const inputClass =
+    'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30';
+
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-xl font-medium">Enseignants</h1>
-        <div className="flex gap-2">
+    <div className="p-4 sm:p-8 min-h-full">
+      {/* En-tête */}
+      <div className="flex flex-wrap justify-between items-start gap-4 mb-6">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-600 mb-1">
+            Personnel
+          </p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Enseignants</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {filtrés.length} enseignant{filtrés.length > 1 ? 's' : ''}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={exporterCSV}
+            className="px-3.5 py-2.5 rounded-xl text-sm font-medium border border-slate-200 bg-white hover:bg-slate-50 transition"
+          >
+            Exporter CSV
+          </button>
           <button
             onClick={ouvrirAjout}
-            className="bg-slate-800 text-white px-4 py-2 rounded text-sm hover:bg-slate-700"
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-600 hover:to-blue-700 shadow-lg shadow-blue-700/20 transition"
           >
             + Ajouter
-          </button>
-          <button onClick={exporterCSV} className="px-3 py-2 rounded border hover:bg-gray-50 text-sm">
-            Exporter CSV
           </button>
         </div>
       </div>
 
-      {message && <p className="text-green-600 text-sm mb-2">{message}</p>}
-      {erreur && <p className="text-red-600 text-sm mb-2">{erreur}</p>}
+      {message && (
+        <p className="text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm mb-4">
+          {message}
+        </p>
+      )}
+      {erreur && !modaleAjout && !modaleEdit && (
+        <p className="text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 text-sm mb-4">
+          {erreur}
+        </p>
+      )}
 
-      {/* Mot de passe temporaire — affiché une seule fois */}
+      {/* Mot de passe temporaire */}
       {mdpTemporaire && (
-        <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-xl text-sm">
+        <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm shadow-sm">
           <p className="font-semibold text-amber-900 mb-1">Identifiants à communiquer</p>
           <p className="text-amber-800">
             Email : <strong>{mdpTemporaire.email}</strong>
           </p>
           <p className="text-amber-800 mt-1">
             Mot de passe temporaire :{' '}
-            <strong className="text-base tracking-wide font-mono">{mdpTemporaire.mdp}</strong>
+            <strong className="text-base tracking-wide font-mono bg-white/60 px-2 py-0.5 rounded">
+              {mdpTemporaire.mdp}
+            </strong>
           </p>
           <p className="text-xs text-amber-600 mt-2">
             Notez-le maintenant : il ne sera plus affiché ensuite.
@@ -232,130 +267,191 @@ export default function Enseignants() {
           <button
             type="button"
             onClick={() => setMdpTemporaire(null)}
-            className="mt-2 text-xs text-amber-700 underline"
+            className="mt-2 text-xs font-medium text-amber-700 underline"
           >
             Fermer
           </button>
         </div>
       )}
 
-      <div className="mb-4 flex items-center gap-3">
+      {/* Recherche */}
+      <div className="mb-5 relative max-w-md">
         <input
-          className="w-full border rounded px-3 py-2"
-          placeholder="Rechercher par nom, prénom ou email"
+          className="w-full border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+          placeholder="Rechercher par nom, prénom ou email…"
           value={recherche}
           onChange={(e) => {
             setRecherche(e.target.value);
             setPage(1);
           }}
         />
+        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">⌕</span>
       </div>
 
       {chargement ? (
-        <p className="text-gray-500">Chargement...</p>
+        <div className="flex justify-center py-16">
+          <div className="w-9 h-9 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
       ) : affichage.length === 0 ? (
-        <p className="text-gray-500">Aucun enseignant trouvé.</p>
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center text-slate-500 text-sm">
+          Aucun enseignant trouvé.
+        </div>
       ) : (
-        <div className="bg-white rounded border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-100 text-left">
-              <tr>
-                <th className="px-4 py-2">Nom</th>
-                <th className="px-4 py-2">Prénom</th>
-                <th className="px-4 py-2">Email</th>
-                <th className="px-4 py-2">Téléphone</th>
-                <th className="px-4 py-2">Matières</th>
-                <th className="px-4 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {affichage.map((e) => (
-                <tr key={e.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-2">{e.utilisateur.nom}</td>
-                  <td className="px-4 py-2">{e.utilisateur.prenom}</td>
-                  <td className="px-4 py-2">{e.utilisateur.email}</td>
-                  <td className="px-4 py-2">{e.telephone || ''}</td>
-                  <td className="px-4 py-2">
-                    {(e.matieres || []).map((m) => m.matiere?.nom || '').join(', ')}
-                  </td>
-                  <td className="px-4 py-2">
-                    <div className="flex gap-2 flex-wrap">
-                      <button onClick={() => ouvrirVoir(e)} className="text-slate-700 text-sm px-2 py-1 border rounded">
-                        Voir
-                      </button>
-                      <button onClick={() => ouvrirEdit(e)} className="text-blue-700 text-sm px-2 py-1 border rounded">
-                        Modifier
-                      </button>
-                      <button onClick={() => ouvrirMatieres(e)} className="text-amber-700 text-sm px-2 py-1 border rounded">
-                        Matières
-                      </button>
-                      <button onClick={() => reinitialiser(e)} className="text-green-700 text-sm px-2 py-1 border rounded">
-                        Réinit. mdp
-                      </button>
-                      <button onClick={() => supprimer(e)} className="text-red-600 text-sm px-2 py-1 border rounded">
-                        Suppr.
-                      </button>
-                    </div>
-                  </td>
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50/80 border-b border-slate-100 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <th className="px-4 py-3 font-semibold">Nom</th>
+                  <th className="px-4 py-3 font-semibold">Prénom</th>
+                  <th className="px-4 py-3 font-semibold">Email</th>
+                  <th className="px-4 py-3 font-semibold">Téléphone</th>
+                  <th className="px-4 py-3 font-semibold">Matières</th>
+                  <th className="px-4 py-3 font-semibold text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {affichage.map((e) => (
+                  <tr key={e.id} className="hover:bg-blue-50/40 transition-colors">
+                    <td className="px-4 py-3 font-semibold text-slate-900">{e.utilisateur.nom}</td>
+                    <td className="px-4 py-3 text-slate-700">{e.utilisateur.prenom}</td>
+                    <td className="px-4 py-3 text-slate-600 text-xs">{e.utilisateur.email}</td>
+                    <td className="px-4 py-3 text-slate-600">{e.telephone || '—'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(e.matieres || []).length === 0 ? (
+                          <span className="text-slate-400 text-xs">—</span>
+                        ) : (
+                          (e.matieres || []).map((m) => (
+                            <span
+                              key={m.id || m.matiere?.id}
+                              className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100"
+                            >
+                              {m.matiere?.nom || ''}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1.5 justify-end">
+                        <button
+                          onClick={() => ouvrirVoir(e)}
+                          className="px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition"
+                        >
+                          Voir
+                        </button>
+                        <button
+                          onClick={() => ouvrirEdit(e)}
+                          className="px-2.5 py-1 text-xs font-medium rounded-lg border border-blue-200 text-blue-700 hover:bg-blue-50 transition"
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          onClick={() => ouvrirMatieres(e)}
+                          className="px-2.5 py-1 text-xs font-medium rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50 transition"
+                        >
+                          Matières
+                        </button>
+                        <button
+                          onClick={() => reinitialiser(e)}
+                          className="px-2.5 py-1 text-xs font-medium rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition"
+                        >
+                          Réinit. mdp
+                        </button>
+                        <button
+                          onClick={() => supprimer(e)}
+                          className="px-2.5 py-1 text-xs font-medium rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition"
+                        >
+                          Suppr.
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {filtrés.length > PAGE_TAILLE && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+              <p className="text-xs text-slate-500">
+                Page {page} / {pages}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-50 transition"
+                >
+                  Précédent
+                </button>
+                <button
+                  onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                  disabled={page === pages}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-50 transition"
+                >
+                  Suivant
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="flex justify-between items-center mt-4">
-        <div className="text-sm text-gray-600">
-          Page {page} / {pages}
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-3 py-1 rounded border">
-            Préc
-          </button>
-          <button onClick={() => setPage((p) => Math.min(pages, p + 1))} className="px-3 py-1 rounded border">
-            Suiv
-          </button>
-        </div>
-      </div>
-
+      {/* Modale ajout */}
       {modaleAjout && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-lg font-medium mb-4">Ajouter un enseignant</h2>
-            {erreur && <p className="text-red-600 text-sm mb-3">{erreur}</p>}
-            <form onSubmit={soumettreAjout} className="space-y-3">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h2 className="text-lg font-bold text-slate-900">Ajouter un enseignant</h2>
+            </div>
+            <form onSubmit={soumettreAjout} className="p-6 space-y-4">
+              {erreur && (
+                <p className="text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 text-sm">
+                  {erreur}
+                </p>
+              )}
               <div>
-                <label className="block text-sm mb-1">Nom *</label>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Nom *
+                </label>
                 <input
-                  className="w-full border rounded px-3 py-2"
+                  className={inputClass}
                   value={formulaire.nom}
                   onChange={(e) => majChamp('nom', e.target.value)}
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1">Prénom *</label>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Prénom *
+                </label>
                 <input
-                  className="w-full border rounded px-3 py-2"
+                  className={inputClass}
                   value={formulaire.prenom}
                   onChange={(e) => majChamp('prenom', e.target.value)}
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1">Email *</label>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Email *
+                </label>
                 <input
                   type="email"
-                  className="w-full border rounded px-3 py-2"
+                  className={inputClass}
                   value={formulaire.email}
                   onChange={(e) => majChamp('email', e.target.value)}
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1">Téléphone</label>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Téléphone
+                </label>
                 <input
-                  className="w-full border rounded px-3 py-2"
+                  className={inputClass}
                   value={formulaire.telephone}
                   onChange={(e) => majChamp('telephone', e.target.value)}
                 />
@@ -363,15 +459,18 @@ export default function Enseignants() {
               <p className="text-xs text-slate-500">
                 Un mot de passe temporaire sera généré et affiché une seule fois après la création.
               </p>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setModaleAjout(false)}
-                  className="px-4 py-2 text-sm rounded border hover:bg-gray-50"
+                  className="px-4 py-2.5 text-sm font-medium rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
                 >
                   Annuler
                 </button>
-                <button type="submit" className="px-4 py-2 bg-slate-800 text-white rounded text-sm">
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 text-sm font-semibold rounded-xl text-white bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-600 hover:to-blue-700 shadow-lg shadow-blue-700/20 transition"
+                >
                   Créer
                 </button>
               </div>
@@ -380,90 +479,128 @@ export default function Enseignants() {
         </div>
       )}
 
+      {/* Modale voir */}
       {modaleVoir && enseignantSelectionne && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-lg font-medium mb-4">Détails enseignant</h2>
-            <p className="font-medium">
-              {enseignantSelectionne.utilisateur.nom} {enseignantSelectionne.utilisateur.prenom}
-            </p>
-            <p>{enseignantSelectionne.utilisateur.email}</p>
-            <p>{enseignantSelectionne.telephone || ''}</p>
-            <p className="mt-2 font-medium">Matières</p>
-            <ul className="list-disc ml-5">
-              {(enseignantSelectionne.matieres || []).map((m) => (
-                <li key={m.id || m.matiere?.id}>{m.matiere?.nom || m.matiereId}</li>
-              ))}
-            </ul>
-            <div className="flex justify-end gap-2 pt-4">
-              <a
-                href={`/emploi-du-temps?enseignantId=${enseignantSelectionne.id}`}
-                className="px-3 py-2 rounded border text-sm"
-              >
-                Voir emploi du temps
-              </a>
-              <button
-                onClick={() => setModaleVoir(false)}
-                className="px-4 py-2 text-sm rounded border hover:bg-gray-50"
-              >
-                Fermer
-              </button>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h2 className="text-lg font-bold text-slate-900">Détails enseignant</h2>
+            </div>
+            <div className="p-6 space-y-3">
+              <p className="font-semibold text-slate-900 text-base">
+                {enseignantSelectionne.utilisateur.nom} {enseignantSelectionne.utilisateur.prenom}
+              </p>
+              <p className="text-sm text-slate-600">{enseignantSelectionne.utilisateur.email}</p>
+              <p className="text-sm text-slate-600">
+                {enseignantSelectionne.telephone || 'Pas de téléphone'}
+              </p>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                  Matières
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(enseignantSelectionne.matieres || []).length === 0 ? (
+                    <span className="text-sm text-slate-400">Aucune</span>
+                  ) : (
+                    (enseignantSelectionne.matieres || []).map((m) => (
+                      <span
+                        key={m.id || m.matiere?.id}
+                        className="inline-flex text-xs font-semibold px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100"
+                      >
+                        {m.matiere?.nom || m.matiereId}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <a
+                  href={`/emploi-du-temps?enseignantId=${enseignantSelectionne.id}`}
+                  className="px-3 py-2 rounded-xl border border-blue-200 text-blue-700 text-sm font-medium hover:bg-blue-50 transition"
+                >
+                  Emploi du temps
+                </a>
+                <button
+                  onClick={() => setModaleVoir(false)}
+                  className="px-4 py-2 text-sm font-medium rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Fermer
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
+      {/* Modale edit */}
       {modaleEdit && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-lg font-medium mb-4">Modifier enseignant</h2>
-            {erreur && <p className="text-red-600 text-sm mb-3">{erreur}</p>}
-            <form onSubmit={soumettreEdit} className="space-y-3">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h2 className="text-lg font-bold text-slate-900">Modifier enseignant</h2>
+            </div>
+            <form onSubmit={soumettreEdit} className="p-6 space-y-4">
+              {erreur && (
+                <p className="text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 text-sm">
+                  {erreur}
+                </p>
+              )}
               <div>
-                <label className="block text-sm mb-1">Nom *</label>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Nom *
+                </label>
                 <input
-                  className="w-full border rounded px-3 py-2"
+                  className={inputClass}
                   value={formulaire.nom}
                   onChange={(e) => majChamp('nom', e.target.value)}
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1">Prénom *</label>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Prénom *
+                </label>
                 <input
-                  className="w-full border rounded px-3 py-2"
+                  className={inputClass}
                   value={formulaire.prenom}
                   onChange={(e) => majChamp('prenom', e.target.value)}
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1">Email *</label>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Email *
+                </label>
                 <input
                   type="email"
-                  className="w-full border rounded px-3 py-2"
+                  className={inputClass}
                   value={formulaire.email}
                   onChange={(e) => majChamp('email', e.target.value)}
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1">Téléphone</label>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Téléphone
+                </label>
                 <input
-                  className="w-full border rounded px-3 py-2"
+                  className={inputClass}
                   value={formulaire.telephone}
                   onChange={(e) => majChamp('telephone', e.target.value)}
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setModaleEdit(false)}
-                  className="px-4 py-2 text-sm rounded border hover:bg-gray-50"
+                  className="px-4 py-2.5 text-sm font-medium rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
                 >
                   Annuler
                 </button>
-                <button type="submit" className="px-4 py-2 bg-slate-800 text-white rounded text-sm">
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 text-sm font-semibold rounded-xl text-white bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-600 hover:to-blue-700 shadow-lg shadow-blue-700/20 transition"
+                >
                   Enregistrer
                 </button>
               </div>
@@ -472,35 +609,49 @@ export default function Enseignants() {
         </div>
       )}
 
+      {/* Modale matières */}
       {modaleMatieres && enseignantSelectionne && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[80vh] overflow-auto">
-            <h2 className="text-lg font-medium mb-4">
-              Assigner matières — {enseignantSelectionne.utilisateur.nom}{' '}
-              {enseignantSelectionne.utilisateur.prenom}
-            </h2>
-            <form onSubmit={soumettreMatieres} className="space-y-3">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-auto">
+            <div className="px-6 py-4 border-b border-slate-100 sticky top-0 bg-white">
+              <h2 className="text-lg font-bold text-slate-900">
+                Matières — {enseignantSelectionne.utilisateur.nom}{' '}
+                {enseignantSelectionne.utilisateur.prenom}
+              </h2>
+            </div>
+            <form onSubmit={soumettreMatieres} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-2">
                 {matieres.map((m) => (
-                  <label key={m.id} className="flex items-center gap-2 border rounded px-3 py-2">
+                  <label
+                    key={m.id}
+                    className={`flex items-center gap-2 border rounded-xl px-3 py-2.5 cursor-pointer transition ${
+                      matieresSelectionnees.includes(m.id)
+                        ? 'border-violet-300 bg-violet-50'
+                        : 'border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
                     <input
                       type="checkbox"
                       checked={matieresSelectionnees.includes(m.id)}
                       onChange={() => toggleMatiere(m.id)}
+                      className="rounded border-slate-300"
                     />
-                    <span className="text-sm">{m.nom}</span>
+                    <span className="text-sm font-medium text-slate-800">{m.nom}</span>
                   </label>
                 ))}
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setModaleMatieres(false)}
-                  className="px-4 py-2 text-sm rounded border hover:bg-gray-50"
+                  className="px-4 py-2.5 text-sm font-medium rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
                 >
                   Annuler
                 </button>
-                <button type="submit" className="px-4 py-2 bg-slate-800 text-white rounded text-sm">
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 text-sm font-semibold rounded-xl text-white bg-gradient-to-r from-violet-600 to-violet-700 hover:from-violet-500 hover:to-violet-600 shadow-lg shadow-violet-600/20 transition"
+                >
                   Sauver
                 </button>
               </div>

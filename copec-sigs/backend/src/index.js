@@ -30,6 +30,7 @@ const path = require('path');
 const disciplineRoutes = require('./routes/discipline.routes');
 const app = express();
 
+
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
@@ -69,6 +70,7 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/certificats', certificatRoutes);
 app.use('/static', express.static(path.join(__dirname, '../public')));
 app.use('/api/disciplines', disciplineRoutes);
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 app.use(errorHandler);
 

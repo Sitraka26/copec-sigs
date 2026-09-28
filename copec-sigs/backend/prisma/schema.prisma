@@ -152,6 +152,16 @@ model Eleve {
   contactUrgenceNom String?
   contactUrgenceTel String?
   informationsSante String?
+    // Famille
+  pereNom          String?
+  pereProfession   String?
+  mereNom          String?
+  mereProfession   String?
+
+  // Documents (chemins relatifs des fichiers uploadés)
+  photoIdentiteUrl       String?   // obligatoire à la création
+  extraitNaissanceUrl    String?   // obligatoire à la création
+  carteBaptemeUrl        String?   // facultatif
   createdAt         DateTime @default(now())
 
   etablissement       Etablissement       @relation(fields: [etablissementId], references: [id])

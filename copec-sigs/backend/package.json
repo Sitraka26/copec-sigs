@@ -20,7 +20,7 @@
     "express-rate-limit": "^8.7.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "multer": "^2.2.0",
+    "multer": "^2.4.0",
     "puppeteer": "^23.5.0",
     "qrcode": "^1.5.4",
     "xlsx": "^0.18.5",
