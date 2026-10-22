@@ -5,6 +5,7 @@ const LIBELLES_TYPE_FRAIS = {
   DROIT: "Droit d'inscription",
   ECOLAGE: 'Écolage',
   FRAIS_EXAMEN: "Frais d'examen",
+  ADIDY: 'Adidy',
   AUTRE: 'Autre',
 };
 

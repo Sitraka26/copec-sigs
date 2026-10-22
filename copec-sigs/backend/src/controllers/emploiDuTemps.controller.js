@@ -5,6 +5,12 @@ const JOURS = { 1: 'Lundi', 2: 'Mardi', 3: 'Mercredi', 4: 'Jeudi', 5: 'Vendredi'
 const CYCLES_PRIMAIRE = new Set(['PRESCOLAIRE', 'PRIMAIRE']);
 const CYCLES_SECONDAIRE = new Set(['COLLEGE', 'LYCEE']);
 
+function validerHeureFormat(heure) {
+  if (!/^\d{2}:\d{2}$/.test(heure)) return false;
+  const [h, m] = heure.split(':').map(Number);
+  return h >= 0 && h <= 23 && m >= 0 && m <= 59;
+}
+
 async function listerParClasse(req, res, next) {
   try {
     const { classeId } = req.query;
@@ -43,8 +49,11 @@ async function creer(req, res, next) {
     if (!Number.isInteger(Number(jour)) || Number(jour) < 1 || Number(jour) > 6) {
       return res.status(400).json({ error: 'jour doit être entre 1 (lundi) et 6 (samedi)' });
     }
-    if (!/^\d{2}:\d{2}$/.test(heureDebut) || !/^\d{2}:\d{2}$/.test(heureFin) || heureDebut >= heureFin) {
-      return res.status(400).json({ error: "L'heure de fin doit être après l'heure de début" });
+    if (!validerHeureFormat(heureDebut) || !validerHeureFormat(heureFin) || heureDebut >= heureFin) {
+      return res.status(400).json({
+        error:
+          "L'heure de fin doit être après l'heure de début et respecter le format HH:MM valide",
+      });
     }
 
     const classe = await prisma.classe.findFirst({
@@ -54,73 +63,200 @@ async function creer(req, res, next) {
     if (!classe) return res.status(404).json({ error: 'Classe introuvable' });
 
     const [matiere, enseignant] = await Promise.all([
-      prisma.matiere.findFirst({ where: { id: matiereId, etablissementId: req.user.etablissementId } }),
+      prisma.matiere.findFirst({
+        where: { id: matiereId, etablissementId: req.user.etablissementId },
+      }),
       prisma.enseignant.findFirst({
-        where: { id: enseignantId, utilisateur: { etablissementId: req.user.etablissementId } },
+        where: {
+          id: enseignantId,
+          utilisateur: { etablissementId: req.user.etablissementId },
+        },
         include: { matieres: { include: { matiere: true } } },
       }),
     ]);
     if (!matiere) return res.status(404).json({ error: 'Matière introuvable' });
     if (!enseignant) return res.status(404).json({ error: 'Enseignant introuvable' });
 
-    const estPrimaire = CYCLES_PRIMAIRE.has(classe.niveau.cycle);
-    const estSecondaire = CYCLES_SECONDAIRE.has(classe.niveau.cycle);
+    const cycle = classe.niveau.cycle;
+    const estPrimaire = CYCLES_PRIMAIRE.has(cycle);
+    const estSecondaire = CYCLES_SECONDAIRE.has(cycle);
+
     if (!estPrimaire && !estSecondaire) {
-      return res.status(400).json({ error: 'Le cycle de cette classe n’est pas configuré pour l’emploi du temps' });
+      return res.status(400).json({
+        error: "Le cycle de cette classe n'est pas configuré pour l'emploi du temps",
+      });
     }
-    const matinFin = estSecondaire ? '12:00' : '11:30';
-    const apresMidiDebut = '13:00';
-    const apresMidiFin = estSecondaire ? '18:00' : '16:30';
-    const estMatin = heureDebut < matinFin;
+
+    let matinDebut, matinFin, apresMidiDebut, apresMidiFin;
+    if (estPrimaire) {
+      matinDebut = '08:00';
+      matinFin = '11:15';
+      apresMidiDebut = '14:00';
+      apresMidiFin = '16:30';
+    } else if (cycle === 'COLLEGE') {
+      matinDebut = '07:00';
+      matinFin = '11:30';
+      apresMidiDebut = '14:00';
+      apresMidiFin = '17:00';
+    } else {
+      matinDebut = '07:00';
+      matinFin = '11:30';
+      apresMidiDebut = '14:00';
+      apresMidiFin = '18:00';
+    }
+
+    const estMatin = heureDebut < '12:00';
     const horaireValide = estMatin
-      ? heureFin <= matinFin
+      ? heureDebut >= matinDebut && heureFin <= matinFin
       : heureDebut >= apresMidiDebut && heureFin <= apresMidiFin;
+
     if (!horaireValide) {
       return res.status(400).json({
-        error: `Horaire invalide : matin jusqu'à ${matinFin}, après-midi de ${apresMidiDebut} à ${apresMidiFin}.`,
+        error:
+          `Horaire invalide pour ce cycle (${cycle}). ` +
+          `Matin : ${matinDebut}–${matinFin} · Après-midi : ${apresMidiDebut}–${apresMidiFin}.`,
       });
     }
 
     const seancesEnseignant = await prisma.emploiDuTemps.findMany({
-      where: { enseignantId, classe: { etablissementId: req.user.etablissementId } },
+      where: {
+        enseignantId,
+        classe: { etablissementId: req.user.etablissementId },
+      },
       include: { classe: { include: { niveau: true } } },
     });
-    if (estPrimaire && seancesEnseignant.some((s) => CYCLES_SECONDAIRE.has(s.classe.niveau.cycle))) {
-      return res.status(409).json({ error: 'Cet enseignant intervient déjà au secondaire et ne peut pas être affecté au préscolaire ou au primaire.' });
+
+    if (
+      estPrimaire &&
+      seancesEnseignant.some((s) => CYCLES_SECONDAIRE.has(s.classe.niveau.cycle))
+    ) {
+      return res.status(409).json({
+        error:
+          'Cet enseignant intervient déjà au secondaire et ne peut pas être affecté au préscolaire ou au primaire.',
+      });
     }
-    if (estSecondaire && seancesEnseignant.some((s) => CYCLES_PRIMAIRE.has(s.classe.niveau.cycle))) {
-      return res.status(409).json({ error: 'Cet enseignant intervient déjà au préscolaire ou au primaire et ne peut pas être affecté au secondaire.' });
+    if (
+      estSecondaire &&
+      seancesEnseignant.some((s) => CYCLES_PRIMAIRE.has(s.classe.niveau.cycle))
+    ) {
+      return res.status(409).json({
+        error:
+          'Cet enseignant intervient déjà au préscolaire ou au primaire et ne peut pas être affecté au secondaire.',
+      });
     }
 
     const seancesClasse = await prisma.emploiDuTemps.findMany({ where: { classeId } });
+
     if (estPrimaire && seancesClasse.some((s) => s.enseignantId !== enseignantId)) {
-      return res.status(409).json({ error: 'Au préscolaire et au primaire, une classe garde le même enseignant pour toutes les matières.' });
-    }
-    if (estSecondaire && (enseignant.matieres.length < 1 || enseignant.matieres.length > 2)) {
-      return res.status(400).json({ error: 'Au secondaire, un enseignant peut être habilité pour une ou deux matières maximum.' });
-    }
-    if (estSecondaire && !enseignant.matieres.some((item) => item.matiereId === matiereId)) {
-      return res.status(400).json({
-        error: `Cet enseignant est habilité pour "${enseignant.matieres[0]?.matiere?.nom || 'une autre matière'}" et ne peut pas enseigner "${matiere.nom}".`,
+      return res.status(409).json({
+        error:
+          'Au préscolaire et au primaire, une classe garde le même enseignant pour toutes les matières.',
       });
     }
-    const conflitsClasse = seancesClasse.filter((s) => Number(s.jour) === Number(jour));
-    const chevauchementClasse = conflitsClasse.some((c) => heureDebut < c.heureFin && heureFin > c.heureDebut);
-    if (chevauchementClasse) {
-      return res.status(409).json({ error: 'Ce créneau chevauche une séance déjà existante pour cette classe' });
+    if (estSecondaire && (enseignant.matieres.length < 1 || enseignant.matieres.length > 2)) {
+      return res.status(400).json({
+        error:
+          'Au secondaire, un enseignant peut être habilité pour une ou deux matières maximum.',
+      });
+    }
+    if (estSecondaire && !enseignant.matieres.some((item) => item.matiereId === matiereId)) {
+      const matieresHabilitees = enseignant.matieres
+        .map((item) => `"${item.matiere?.nom}"`)
+        .join(' ou ');
+      return res.status(400).json({
+        error: `Cet enseignant est habilité pour ${matieresHabilitees || 'une autre matière'} et ne peut pas enseigner "${matiere.nom}".`,
+      });
     }
 
-    const conflitsEnseignant = seancesEnseignant.filter((s) => Number(s.jour) === Number(jour));
-    const conflitEnseignant = conflitsEnseignant.find((c) => heureDebut < c.heureFin && heureFin > c.heureDebut);
+    const libelleNiveau = (classe.niveau.libelle || '').toLowerCase();
+    const estTerminale =
+      libelleNiveau.includes('terminale') || libelleNiveau.includes('tle');
+    const filiereClasse = (classe.niveau.filiere || '').toUpperCase();
+
+    if (
+      estTerminale &&
+      matiere.domaine === 'SCIENTIFIQUE' &&
+      (filiereClasse === 'L' || filiereClasse === 'S')
+    ) {
+      const autreFiliere = filiereClasse === 'L' ? 'S' : 'L';
+      const conflitFiliere = await prisma.emploiDuTemps.findFirst({
+        where: {
+          enseignantId,
+          matiereId,
+          classe: {
+            etablissementId: req.user.etablissementId,
+            niveau: {
+              OR: [
+                { libelle: { contains: 'Terminale', mode: 'insensitive' } },
+                { libelle: { contains: 'Tle', mode: 'insensitive' } },
+              ],
+              filiere: { equals: autreFiliere, mode: 'insensitive' },
+            },
+          },
+        },
+      });
+      if (conflitFiliere) {
+        return res.status(409).json({
+          error:
+            `Cet enseignant assure déjà "${matiere.nom}" en Terminale ${autreFiliere}. ` +
+            `Pour une matière scientifique, un enseignant ne peut pas faire Terminale L et S.`,
+        });
+      }
+    }
+
+    const conflitsClasse = seancesClasse.filter((s) => Number(s.jour) === Number(jour));
+    if (conflitsClasse.some((c) => heureDebut < c.heureFin && heureFin > c.heureDebut)) {
+      return res.status(409).json({
+        error: 'Ce créneau chevauche une séance déjà existante pour cette classe',
+      });
+    }
+
+    const conflitsEnseignant = seancesEnseignant.filter(
+      (s) => Number(s.jour) === Number(jour)
+    );
+    const conflitEnseignant = conflitsEnseignant.find(
+      (c) => heureDebut < c.heureFin && heureFin > c.heureDebut
+    );
     if (conflitEnseignant) {
       return res.status(409).json({
         error: `Cet enseignant a déjà une séance sur ce créneau, dans la classe "${conflitEnseignant.classe.nom}"`,
       });
     }
 
+    // --- Indisponibilités (autre école, etc.) ---
+    const indispos = await prisma.indisponibiliteEnseignant.findMany({
+      where: {
+        enseignantId,
+        etablissementId: req.user.etablissementId,
+        jour: Number(jour),
+      },
+    });
+    const conflitIndispo = indispos.find(
+      (i) => heureDebut < i.heureFin && heureFin > i.heureDebut
+    );
+    if (conflitIndispo) {
+      return res.status(409).json({
+        error:
+          `Cet enseignant est indisponible le ${JOURS[Number(jour)]} ` +
+          `${conflitIndispo.heureDebut}–${conflitIndispo.heureFin}` +
+          (conflitIndispo.motif ? ` (${conflitIndispo.motif})` : '') +
+          '.',
+      });
+    }
+
     const seance = await prisma.emploiDuTemps.create({
-      data: { classeId, matiereId, enseignantId, jour: Number(jour), heureDebut, heureFin },
-      include: { matiere: true, enseignant: { include: { utilisateur: true } } },
+      data: {
+        classeId,
+        matiereId,
+        enseignantId,
+        jour: Number(jour),
+        heureDebut,
+        heureFin,
+      },
+      include: {
+        matiere: true,
+        enseignant: { include: { utilisateur: true } },
+      },
     });
 
     res.status(201).json(seance);

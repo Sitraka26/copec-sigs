@@ -5,7 +5,9 @@ const { obtenirClasseIdsEnseignant } = require('../utils/enseignant.utils');
 async function listerPourSaisie(req, res, next) {
   try {
     const { classeId, date } = req.query;
-    if (!classeId || !date) return res.status(400).json({ error: 'classeId et date sont requis' });
+    if (!classeId || !date) {
+      return res.status(400).json({ error: 'classeId et date sont requis' });
+    }
 
     const classe = await prisma.classe.findFirst({
       where: { id: classeId, etablissementId: req.user.etablissementId },
@@ -38,6 +40,7 @@ async function listerPourSaisie(req, res, next) {
       prenom: insc.eleve.prenom,
       statut: insc.eleve.presences[0]?.statut ?? 'PRESENT',
       justifie: insc.eleve.presences[0]?.justifie ?? false,
+      minutesRetard: insc.eleve.presences[0]?.minutesRetard ?? null,
     }));
 
     res.json({ date, eleves: grille });
@@ -51,13 +54,25 @@ async function enregistrerLot(req, res, next) {
     const { classeId, date, presences } = req.body;
 
     if (!classeId || !date || !Array.isArray(presences)) {
-      return res.status(400).json({ error: 'classeId, date et presences[] sont requis' });
+      return res.status(400).json({
+        error: 'classeId, date et presences[] sont requis',
+      });
     }
 
     const statutsValides = ['PRESENT', 'ABSENT', 'RETARD'];
     for (const p of presences) {
       if (!statutsValides.includes(p.statut)) {
-        return res.status(400).json({ error: `Statut invalide pour l'élève ${p.eleveId}` });
+        return res.status(400).json({
+          error: `Statut invalide pour l'élève ${p.eleveId}`,
+        });
+      }
+      if (p.statut === 'RETARD') {
+        const m = Number(p.minutesRetard);
+        if (!Number.isFinite(m) || m < 1 || m > 240) {
+          return res.status(400).json({
+            error: `Retard : indiquez les minutes (1–240) pour l'élève ${p.eleveId}`,
+          });
+        }
       }
     }
 
@@ -79,28 +94,37 @@ async function enregistrerLot(req, res, next) {
     const idsValides = new Set(inscriptionsValides.map((i) => i.eleveId));
     const idsInvalides = eleveIds.filter((id) => !idsValides.has(id));
     if (idsInvalides.length > 0) {
-      return res.status(400).json({ error: `Élève(s) non inscrit(s) dans cette classe : ${idsInvalides.join(', ')}` });
+      return res.status(400).json({
+        error: `Élève(s) non inscrit(s) dans cette classe : ${idsInvalides.join(', ')}`,
+      });
     }
 
     const dateJour = new Date(date);
-
-    const presencesExistantes = await prisma.presence.findMany({
-      where: { eleveId: { in: eleveIds }, date: dateJour },
-    });
-    const statutAvant = {};
-    presencesExistantes.forEach((p) => (statutAvant[p.eleveId] = p.statut));
-
     const resultats = [];
 
     for (const p of presences) {
+      const minutesRetard =
+        p.statut === 'RETARD' ? Math.round(Number(p.minutesRetard)) : null;
+
       const presence = await prisma.presence.upsert({
         where: { eleveId_date: { eleveId: p.eleveId, date: dateJour } },
-        update: { statut: p.statut, justifie: p.justifie ?? false },
-        create: { eleveId: p.eleveId, date: dateJour, statut: p.statut, justifie: p.justifie ?? false },
+        update: {
+          statut: p.statut,
+          justifie: p.justifie ?? false,
+          minutesRetard,
+        },
+        create: {
+          eleveId: p.eleveId,
+          date: dateJour,
+          statut: p.statut,
+          justifie: p.justifie ?? false,
+          minutesRetard,
+        },
       });
 
       let notification = null;
       let alerteAbsence = null;
+
       if (p.statut === 'ABSENT') {
         const historique = await prisma.presence.findMany({
           where: { eleveId: p.eleveId },

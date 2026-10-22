@@ -1,6 +1,7 @@
 const express = require('express');
 const { authRequired, requireRole } = require('../middlewares/auth');
 const {
+  listerMatieresParNiveau,
   listerPourSaisie,
   enregistrerLot,
   listerParEleve,
@@ -12,6 +13,9 @@ const {
 const router = express.Router();
 router.use(authRequired);
 router.use(requireRole('ADMIN', 'DIRECTEUR', 'ENSEIGNANT'));
+
+
+router.get('/matieres-niveau/:niveauId', listerMatieresParNiveau);
 
 router.get('/saisie', listerPourSaisie);
 router.post('/saisie', enregistrerLot);

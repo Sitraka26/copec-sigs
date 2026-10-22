@@ -8,6 +8,33 @@ const COULEURS_STATUT = {
   DIPLOMEE: 'bg-amber-50 text-amber-800 border-amber-200',
 };
 
+const AGES_PAR_CYCLE = {
+  PRESCOLAIRE: { min: 2, max: 6 },
+  PRIMAIRE: { min: 5, max: 13 },
+  COLLEGE: { min: 10, max: 17 },
+  LYCEE: { min: 14, max: 22 },
+};
+
+/** Âge au 31 décembre de l'année en cours */
+function ageAu31Decembre(dateNaissance) {
+  if (!dateNaissance) return null;
+  const d = new Date(dateNaissance);
+  if (Number.isNaN(d.getTime())) return null;
+  const ref = new Date(new Date().getFullYear(), 11, 31);
+  let age = ref.getFullYear() - d.getFullYear();
+  const mDiff = ref.getMonth() - d.getMonth();
+  if (mDiff < 0 || (mDiff === 0 && ref.getDate() < d.getDate())) age -= 1;
+  return age;
+}
+
+function ageCompatible(dateNaissance, cycle) {
+  const bornes = AGES_PAR_CYCLE[cycle];
+  if (!bornes) return true;
+  const age = ageAu31Decembre(dateNaissance);
+  if (age === null) return false;
+  return age >= bornes.min && age <= bornes.max;
+}
+
 export default function Inscriptions() {
   const [classes, setClasses] = useState([]);
   const [classeSelectionnee, setClasseSelectionnee] = useState('');
@@ -39,11 +66,25 @@ export default function Inscriptions() {
     api
       .get(`/classes/${classeSelectionnee}`)
       .then(({ data }) => setDetailClasse(data))
-      .catch((err) => setErreur(err.response?.data?.error || 'Erreur de chargement de la classe'));
+      .catch((err) =>
+        setErreur(err.response?.data?.error || 'Erreur de chargement de la classe')
+      );
   }, [classeSelectionnee]);
 
-  const idsDejaInscrits = new Set((detailClasse?.inscriptions || []).map((i) => i.eleve.id));
-  const elevesDisponibles = tousLesEleves.filter((e) => !idsDejaInscrits.has(e.id));
+  const cycleClasse = detailClasse?.niveau?.cycle || null;
+  const bornesAge = cycleClasse ? AGES_PAR_CYCLE[cycleClasse] : null;
+
+  const idsDejaInscrits = new Set(
+    (detailClasse?.inscriptions || []).map((i) => i.eleve.id)
+  );
+
+  const elevesDisponibles = useMemo(() => {
+    return tousLesEleves.filter((e) => {
+      if (idsDejaInscrits.has(e.id)) return false;
+      if (cycleClasse && !ageCompatible(e.dateNaissance, cycleClasse)) return false;
+      return true;
+    });
+  }, [tousLesEleves, detailClasse, cycleClasse]);
 
   const filtered = useMemo(() => {
     const q = recherche.trim().toLowerCase();
@@ -71,7 +112,9 @@ export default function Inscriptions() {
 
   async function transferer(inscriptionId) {
     const liste = classes.map((c) => `${c.id}: ${c.nom}`).join('\n');
-    const choix = prompt(`Classes disponibles (id : nom)\n${liste}\n\nEntrer l'id de la classe cible:`);
+    const choix = prompt(
+      `Classes disponibles (id : nom)\n${liste}\n\nEntrer l'id de la classe cible:`
+    );
     if (!choix) return;
     try {
       await api.patch(`/inscriptions/${inscriptionId}/classe`, { classeId: choix });
@@ -98,7 +141,9 @@ export default function Inscriptions() {
     ]);
     const csv = [
       header.join(';'),
-      ...rows.map((r) => r.map((c) => `"${(c ?? '').toString().replace(/"/g, '""')}"`).join(';')),
+      ...rows.map((r) =>
+        r.map((c) => `"${(c ?? '').toString().replace(/"/g, '""')}"`).join(';')
+      ),
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -141,24 +186,22 @@ export default function Inscriptions() {
 
   return (
     <div className="p-4 sm:p-8 min-h-full">
-      {/* En-tête */}
       <div className="flex flex-wrap justify-between items-start gap-4 mb-6">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-600 mb-1">
             Scolarité
           </p>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Inscriptions</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Gestion des inscriptions par classe
-          </p>
+          <p className="text-sm text-slate-500 mt-1">Gestion des inscriptions par classe</p>
         </div>
       </div>
 
       {erreur && !modaleOuverte && (
-        <p className="text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 text-sm mb-4">{erreur}</p>
+        <p className="text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 text-sm mb-4">
+          {erreur}
+        </p>
       )}
 
-      {/* Sélecteur de classe */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mb-5 max-w-sm">
         <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
           Classe
@@ -174,9 +217,13 @@ export default function Inscriptions() {
             </option>
           ))}
         </select>
+        {bornesAge && (
+          <p className="text-[11px] text-slate-500 mt-2">
+            Âges attendus pour ce cycle : {bornesAge.min}–{bornesAge.max} ans
+          </p>
+        )}
       </div>
 
-      {/* Barre d'actions */}
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
         <h2 className="font-semibold text-slate-800 text-sm">
           Élèves inscrits{' '}
@@ -197,7 +244,9 @@ export default function Inscriptions() {
               placeholder="Rechercher matricule / nom…"
               className="border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 w-52"
             />
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">⌕</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+              ⌕
+            </span>
           </div>
           <button
             onClick={() => exportCSV(filtered)}
@@ -206,7 +255,11 @@ export default function Inscriptions() {
             Exporter CSV
           </button>
           <button
-            onClick={() => setModaleOuverte(true)}
+            onClick={() => {
+              setEleveChoisi('');
+              setErreur('');
+              setModaleOuverte(true);
+            }}
             disabled={!classeSelectionnee}
             className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 shadow-lg shadow-blue-700/20 transition"
           >
@@ -215,7 +268,6 @@ export default function Inscriptions() {
         </div>
       </div>
 
-      {/* Tableau */}
       {detailClasse && filtered.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center">
           <p className="text-slate-500 text-sm">
@@ -245,12 +297,15 @@ export default function Inscriptions() {
                       <td className="px-4 py-3 font-mono text-xs text-slate-600">
                         {insc.eleve.matricule}
                       </td>
-                      <td className="px-4 py-3 font-medium text-slate-900">{insc.eleve.nom}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {insc.eleve.nom}
+                      </td>
                       <td className="px-4 py-3 text-slate-700">{insc.eleve.prenom}</td>
                       <td className="px-4 py-3">
                         <span
                           className={`inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
-                            COULEURS_STATUT[insc.statut] || 'bg-slate-50 text-slate-600 border-slate-200'
+                            COULEURS_STATUT[insc.statut] ||
+                            'bg-slate-50 text-slate-600 border-slate-200'
                           }`}
                         >
                           {insc.statut}
@@ -327,7 +382,6 @@ export default function Inscriptions() {
         )
       )}
 
-      {/* Modale inscription */}
       {modaleOuverte && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
@@ -336,13 +390,23 @@ export default function Inscriptions() {
               {detailClasse && (
                 <p className="text-xs text-slate-500 mt-0.5">
                   Classe : {detailClasse.nom}
+                  {cycleClasse ? ` · ${cycleClasse}` : ''}
+                  {bornesAge
+                    ? ` · âges ${bornesAge.min}–${bornesAge.max} ans`
+                    : ''}
                 </p>
               )}
             </div>
             <div className="p-6">
+              {erreur && (
+                <p className="text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 text-sm mb-4">
+                  {erreur}
+                </p>
+              )}
               {elevesDisponibles.length === 0 ? (
                 <p className="text-slate-500 text-sm">
-                  Tous les élèves sont déjà inscrits dans cette classe.
+                  Aucun élève disponible pour ce cycle (déjà inscrits, âge non adapté, ou
+                  date de naissance manquante).
                 </p>
               ) : (
                 <form onSubmit={inscrire} className="space-y-4">
@@ -357,11 +421,15 @@ export default function Inscriptions() {
                       required
                     >
                       <option value="">— Choisir —</option>
-                      {elevesDisponibles.map((e) => (
-                        <option key={e.id} value={e.id}>
-                          {e.nom} {e.prenom} ({e.matricule})
-                        </option>
-                      ))}
+                      {elevesDisponibles.map((e) => {
+                        const age = ageAu31Decembre(e.dateNaissance);
+                        return (
+                          <option key={e.id} value={e.id}>
+                            {e.nom} {e.prenom} ({e.matricule})
+                            {age != null ? ` — ${age} ans` : ''}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                   <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">

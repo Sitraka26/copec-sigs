@@ -10,7 +10,11 @@ export default function Classes() {
   const [modaleOuverte, setModaleOuverte] = useState(false);
   const [enregistrement, setEnregistrement] = useState(false);
 
-  const [formulaire, setFormulaire] = useState({ nom: '', niveauId: '', enseignantPrincipal: '' });
+  const [formulaire, setFormulaire] = useState({
+    nom: '',
+    niveauId: '',
+    enseignantPrincipalId: '',
+  });
   const [enseignants, setEnseignants] = useState([]);
   const [recherche, setRecherche] = useState('');
   const [page, setPage] = useState(1);
@@ -18,6 +22,16 @@ export default function Classes() {
   const [editingId, setEditingId] = useState(null);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [detailsData, setDetailsData] = useState(null);
+
+  const cycleNiveau = useMemo(() => {
+    const n = niveaux.find((x) => x.id === formulaire.niveauId);
+    return n?.cycle || null;
+  }, [niveaux, formulaire.niveauId]);
+
+  const enseignantsFiltres = useMemo(() => {
+    if (!cycleNiveau) return enseignants;
+    return enseignants.filter((ens) => ens.cyclePrincipal === cycleNiveau);
+  }, [enseignants, cycleNiveau]);
 
   async function chargerClasses() {
     try {
@@ -47,15 +61,19 @@ export default function Classes() {
       .finally(() => setChargement(false));
   }, []);
 
+  function majChamp(champ, valeur) {
+    setFormulaire((f) => ({ ...f, [champ]: valeur }));
+  }
+
   function ouvrirModale() {
-    setFormulaire({ nom: '', niveauId: niveaux[0]?.id || '', enseignantPrincipal: '' });
+    setFormulaire({
+      nom: '',
+      niveauId: niveaux[0]?.id || '',
+      enseignantPrincipalId: '',
+    });
     setEditingId(null);
     setErreur('');
     setModaleOuverte(true);
-  }
-
-  function majChamp(champ, valeur) {
-    setFormulaire((f) => ({ ...f, [champ]: valeur }));
   }
 
   function ouvrirModaleEdit(classe) {
@@ -63,7 +81,7 @@ export default function Classes() {
     setFormulaire({
       nom: classe.nom || '',
       niveauId: classe.niveauId || niveaux[0]?.id || '',
-      enseignantPrincipal: classe.enseignantPrincipal || '',
+      enseignantPrincipalId: classe.enseignantPrincipalId || '',
     });
     setErreur('');
     setModaleOuverte(true);
@@ -85,6 +103,7 @@ export default function Classes() {
         nom: `${classe.nom} (copie)`,
         niveauId: classe.niveauId,
         anneeScolaireId,
+        enseignantPrincipalId: null,
       });
       await chargerClasses();
     } catch (err) {
@@ -159,14 +178,15 @@ export default function Classes() {
     setEnregistrement(true);
     setErreur('');
     try {
+      const payload = {
+        nom: formulaire.nom,
+        niveauId: formulaire.niveauId,
+        enseignantPrincipalId: formulaire.enseignantPrincipalId || null,
+      };
       if (editingId) {
-        await api.put(`/classes/${editingId}`, {
-          nom: formulaire.nom,
-          niveauId: formulaire.niveauId,
-          enseignantPrincipal: formulaire.enseignantPrincipal,
-        });
+        await api.put(`/classes/${editingId}`, payload);
       } else {
-        await api.post('/classes', { ...formulaire, anneeScolaireId });
+        await api.post('/classes', { ...payload, anneeScolaireId });
       }
       setModaleOuverte(false);
       setEditingId(null);
@@ -201,7 +221,6 @@ export default function Classes() {
 
   return (
     <div className="p-4 sm:p-8 min-h-full">
-      {/* En-tête */}
       <div className="flex flex-wrap justify-between items-start gap-4 mb-6">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-600 mb-1">
@@ -271,6 +290,7 @@ export default function Classes() {
                   <th className="px-4 py-3 font-semibold">Nom</th>
                   <th className="px-4 py-3 font-semibold">Niveau</th>
                   <th className="px-4 py-3 font-semibold">Cycle</th>
+                  <th className="px-4 py-3 font-semibold">Titulaire</th>
                   <th className="px-4 py-3 font-semibold">Effectif</th>
                   <th className="px-4 py-3 font-semibold text-right">Actions</th>
                 </tr>
@@ -287,6 +307,11 @@ export default function Classes() {
                       <span className="inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
                         {classe.niveau?.cycle}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-600">
+                      {classe.enseignantPrincipal?.utilisateur
+                        ? `${classe.enseignantPrincipal.utilisateur.prenom} ${classe.enseignantPrincipal.utilisateur.nom}`
+                        : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-100">
@@ -324,7 +349,7 @@ export default function Classes() {
                           className="px-2.5 py-1 text-xs font-medium rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition"
                         >
                           Suppr.
-                       </button>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -359,7 +384,6 @@ export default function Classes() {
         </div>
       )}
 
-      {/* Modale création / édition */}
       {modaleOuverte && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
@@ -381,13 +405,19 @@ export default function Classes() {
                 <select
                   className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                   value={formulaire.niveauId}
-                  onChange={(e) => majChamp('niveauId', e.target.value)}
+                  onChange={(e) =>
+                    setFormulaire((f) => ({
+                      ...f,
+                      niveauId: e.target.value,
+                      enseignantPrincipalId: '',
+                    }))
+                  }
                   required
                 >
                   {niveaux.map((n) => (
                     <option key={n.id} value={n.id}>
                       {n.libelle}
-                      {n.filiere ? ` — ${n.filiere}` : ''}
+                      {n.filiere ? ` — ${n.filiere}` : ''} ({n.cycle})
                     </option>
                   ))}
                 </select>
@@ -398,7 +428,7 @@ export default function Classes() {
                 </label>
                 <input
                   className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                  placeholder="ex. 6ème A"
+                  placeholder="ex. GS, 6ème A"
                   value={formulaire.nom}
                   onChange={(e) => majChamp('nom', e.target.value)}
                   required
@@ -408,28 +438,23 @@ export default function Classes() {
                 <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
                   Enseignant principal (optionnel)
                 </label>
-                {enseignants.length > 0 ? (
-                  <select
-                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                    value={formulaire.enseignantPrincipal}
-                    onChange={(e) => majChamp('enseignantPrincipal', e.target.value)}
-                  >
-                    <option value="">— Aucun —</option>
-                    {enseignants.map((ens) => (
-                      <option
-                        key={ens.id}
-                        value={`${ens.utilisateur.nom} ${ens.utilisateur.prenom}`}
-                      >
-                        {ens.utilisateur.nom} {ens.utilisateur.prenom}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                    value={formulaire.enseignantPrincipal}
-                    onChange={(e) => majChamp('enseignantPrincipal', e.target.value)}
-                  />
+                <select
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  value={formulaire.enseignantPrincipalId}
+                  onChange={(e) => majChamp('enseignantPrincipalId', e.target.value)}
+                >
+                  <option value="">— Aucun —</option>
+                  {enseignantsFiltres.map((ens) => (
+                    <option key={ens.id} value={ens.id}>
+                      {ens.utilisateur.nom} {ens.utilisateur.prenom}
+                    </option>
+                  ))}
+                </select>
+                {cycleNiveau && enseignantsFiltres.length === 0 && (
+                  <p className="text-xs text-amber-700 mt-1.5">
+                    Aucun enseignant pour le cycle {cycleNiveau}. Créez-en un avec ce cycle
+                    dans Enseignants.
+                  </p>
                 )}
               </div>
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -460,7 +485,6 @@ export default function Classes() {
         </div>
       )}
 
-      {/* Modale détails */}
       {detailsModalOpen && detailsData && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col">

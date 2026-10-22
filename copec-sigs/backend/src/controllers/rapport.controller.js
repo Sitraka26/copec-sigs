@@ -31,7 +31,9 @@ async function exporterEleves(req, res, next) {
       Nom: e.nom,
       Prénom: e.prenom,
       Sexe: e.sexe,
-      'Date de naissance': e.dateNaissance ? new Date(e.dateNaissance).toLocaleDateString('fr-FR') : '',
+      'Date de naissance': e.dateNaissance
+        ? new Date(e.dateNaissance).toLocaleDateString('fr-FR')
+        : '',
       Classe: e.inscriptions[0]?.classe?.nom || '',
       Niveau: e.inscriptions[0]?.classe?.niveau?.libelle || '',
       Adresse: e.adresse || '',
@@ -47,10 +49,15 @@ async function exporterEleves(req, res, next) {
 async function exporterPaiements(req, res, next) {
   try {
     const { anneeScolaireId } = req.query;
-    if (!anneeScolaireId) return res.status(400).json({ error: 'anneeScolaireId requis' });
+    if (!anneeScolaireId) {
+      return res.status(400).json({ error: 'anneeScolaireId requis' });
+    }
 
     const paiements = await prisma.paiement.findMany({
-      where: { anneeScolaireId, eleve: { etablissementId: req.user.etablissementId } },
+      where: {
+        anneeScolaireId,
+        eleve: { etablissementId: req.user.etablissementId },
+      },
       include: { eleve: true },
       orderBy: { datePaiement: 'desc' },
     });
@@ -75,44 +82,66 @@ async function exporterPaiements(req, res, next) {
 async function obtenirSynthese(req, res, next) {
   try {
     const { anneeScolaireId } = req.query;
-    if (!anneeScolaireId) return res.status(400).json({ error: 'anneeScolaireId requis' });
+    if (!anneeScolaireId) {
+      return res.status(400).json({ error: 'anneeScolaireId requis' });
+    }
 
     const inscriptions = await prisma.inscription.findMany({
-      where: { anneeScolaireId, statut: 'ACTIVE', classe: { etablissementId: req.user.etablissementId } },
+      where: {
+        anneeScolaireId,
+        statut: 'ACTIVE',
+        classe: { etablissementId: req.user.etablissementId },
+      },
       include: { eleve: true, classe: { include: { niveau: true } } },
     });
-    const eleveIds = inscriptions.map((inscription) => inscription.eleveId);
+    const eleveIds = inscriptions.map((i) => i.eleveId);
+
     const [paiements, notes, presences] = await Promise.all([
       prisma.paiement.findMany({
-        where: { anneeScolaireId, eleve: { etablissementId: req.user.etablissementId } },
+        where: {
+          anneeScolaireId,
+          eleve: { etablissementId: req.user.etablissementId },
+        },
       }),
       prisma.note.findMany({ where: { eleveId: { in: eleveIds } } }),
       prisma.presence.findMany({ where: { eleveId: { in: eleveIds } } }),
     ]);
 
-    const paiementsPayes = paiements.filter((paiement) => paiement.statut === 'PAYE');
-    const notesValides = notes.filter((note) => Number.isFinite(note.valeur));
+    const paiementsPayes = paiements.filter((p) => p.statut === 'PAYE');
+    const notesValides = notes.filter((n) => Number.isFinite(n.valeur));
     const moyenne = notesValides.length
-      ? notesValides.reduce((total, note) => total + note.valeur, 0) / notesValides.length
+      ? notesValides.reduce((t, n) => t + n.valeur, 0) / notesValides.length
       : null;
-    const absences = presences.filter((presence) => presence.statut === 'ABSENT').length;
-    const retards = presences.filter((presence) => presence.statut === 'RETARD').length;
+
+    const absences = presences.filter((p) => p.statut === 'ABSENT').length;
+    const retards = presences.filter((p) => p.statut === 'RETARD').length;
+    const minutesRetardTotal = presences
+      .filter((p) => p.statut === 'RETARD')
+      .reduce((t, p) => t + (p.minutesRetard || 0), 0);
 
     const peutVoirFinances = ['ADMIN', 'DIRECTEUR', 'ECONOME'].includes(req.user.role);
+
     res.json({
       eleves: inscriptions.length,
-      classes: new Set(inscriptions.map((inscription) => inscription.classeId)).size,
-      paiements: peutVoirFinances ? {
-        total: paiementsPayes.reduce((total, paiement) => total + paiement.montant, 0),
-        nombre: paiementsPayes.length,
-        droit: paiementsPayes.filter((paiement) => paiement.typeFrais === 'DROIT').reduce((total, paiement) => total + paiement.montant, 0),
-        ecolage: paiementsPayes.filter((paiement) => paiement.typeFrais === 'ECOLAGE').reduce((total, paiement) => total + paiement.montant, 0),
-      } : null,
+      classes: new Set(inscriptions.map((i) => i.classeId)).size,
+      paiements: peutVoirFinances
+        ? {
+            total: paiementsPayes.reduce((t, p) => t + p.montant, 0),
+            nombre: paiementsPayes.length,
+            droit: paiementsPayes
+              .filter((p) => p.typeFrais === 'DROIT')
+              .reduce((t, p) => t + p.montant, 0),
+            ecolage: paiementsPayes
+              .filter((p) => p.typeFrais === 'ECOLAGE')
+              .reduce((t, p) => t + p.montant, 0),
+          }
+        : null,
       scolarite: {
         notes: notesValides.length,
         moyenne: moyenne === null ? null : Math.round(moyenne * 100) / 100,
         absences,
         retards,
+        minutesRetardTotal,
       },
     });
   } catch (err) {
@@ -123,17 +152,32 @@ async function obtenirSynthese(req, res, next) {
 async function exporterAbsences(req, res, next) {
   try {
     const { anneeScolaireId } = req.query;
-    if (!anneeScolaireId) return res.status(400).json({ error: 'anneeScolaireId requis' });
+    if (!anneeScolaireId) {
+      return res.status(400).json({ error: 'anneeScolaireId requis' });
+    }
+
     const inscriptions = await prisma.inscription.findMany({
-      where: { anneeScolaireId, statut: 'ACTIVE', classe: { etablissementId: req.user.etablissementId } },
+      where: {
+        anneeScolaireId,
+        statut: 'ACTIVE',
+        classe: { etablissementId: req.user.etablissementId },
+      },
       include: { eleve: true, classe: true },
     });
-    const eleveIds = inscriptions.map((inscription) => inscription.eleveId);
+    const eleveIds = inscriptions.map((i) => i.eleveId);
+
     const presences = await prisma.presence.findMany({
-      where: { eleveId: { in: eleveIds }, statut: { in: ['ABSENT', 'RETARD'] } },
+      where: {
+        eleveId: { in: eleveIds },
+        statut: { in: ['ABSENT', 'RETARD'] },
+      },
       orderBy: [{ date: 'desc' }],
     });
-    const inscriptionParEleve = new Map(inscriptions.map((inscription) => [inscription.eleveId, inscription]));
+
+    const inscriptionParEleve = new Map(
+      inscriptions.map((i) => [i.eleveId, i])
+    );
+
     const lignes = presences.map((presence) => {
       const inscription = inscriptionParEleve.get(presence.eleveId);
       return {
@@ -142,10 +186,13 @@ async function exporterAbsences(req, res, next) {
         Matricule: inscription.eleve.matricule,
         Classe: inscription.classe.nom,
         Statut: presence.statut === 'ABSENT' ? 'Absent' : 'Retard',
+        'Minutes de retard':
+          presence.statut === 'RETARD' ? presence.minutesRetard ?? '' : '',
         Justifiée: presence.justifie ? 'Oui' : 'Non',
         'Contact urgence': inscription.eleve.contactUrgenceTel || '',
       };
     });
+
     envoyerExcel(res, lignes, 'Absences', 'absences.xlsx');
   } catch (err) {
     next(err);
@@ -156,39 +203,62 @@ async function exporterResultats(req, res, next) {
   try {
     const { anneeScolaireId, periode = '1' } = req.query;
     const periodeNombre = Number(periode);
-    if (!anneeScolaireId) return res.status(400).json({ error: 'anneeScolaireId requis' });
-    if (!Number.isInteger(periodeNombre) || periodeNombre < 1 || periodeNombre > 5) {
-      return res.status(400).json({ error: 'La période doit être un bimestre entre 1 et 5' });
+    if (!anneeScolaireId) {
+      return res.status(400).json({ error: 'anneeScolaireId requis' });
     }
+    if (!Number.isInteger(periodeNombre) || periodeNombre < 1 || periodeNombre > 5) {
+      return res.status(400).json({
+        error: 'La période doit être un bimestre entre 1 et 5',
+      });
+    }
+
     const inscriptions = await prisma.inscription.findMany({
-      where: { anneeScolaireId, statut: 'ACTIVE', classe: { etablissementId: req.user.etablissementId } },
+      where: {
+        anneeScolaireId,
+        statut: 'ACTIVE',
+        classe: { etablissementId: req.user.etablissementId },
+      },
       include: { eleve: true, classe: { include: { niveau: true } } },
     });
+
     const notes = await prisma.note.findMany({
-      where: { periode: periodeNombre, eleveId: { in: inscriptions.map((inscription) => inscription.eleveId) } },
+      where: {
+        periode: periodeNombre,
+        eleveId: { in: inscriptions.map((i) => i.eleveId) },
+      },
       include: { matiere: true },
     });
+
     const notesParEleve = new Map();
     notes.forEach((note) => {
       if (!notesParEleve.has(note.eleveId)) notesParEleve.set(note.eleveId, []);
       notesParEleve.get(note.eleveId).push(note);
     });
-    const lignes = inscriptions.map((inscription) => {
-      const notesEleve = notesParEleve.get(inscription.eleveId) || [];
-      const moyenne = notesEleve.length
-        ? notesEleve.reduce((total, note) => total + note.valeur, 0) / notesEleve.length
-        : null;
-      return {
-        Élève: `${inscription.eleve.nom} ${inscription.eleve.prenom}`,
-        Matricule: inscription.eleve.matricule,
-        Classe: inscription.classe.nom,
-        Niveau: inscription.classe.niveau.libelle,
-        Bimestre: periodeNombre,
-        'Nombre de notes': notesEleve.length,
-        Moyenne: moyenne === null ? '' : Math.round(moyenne * 100) / 100,
-      };
-    }).sort((a, b) => (b.Moyenne || -1) - (a.Moyenne || -1));
-    envoyerExcel(res, lignes, 'Résultats', `resultats-bimestre-${periodeNombre}.xlsx`);
+
+    const lignes = inscriptions
+      .map((inscription) => {
+        const notesEleve = notesParEleve.get(inscription.eleveId) || [];
+        const moyenne = notesEleve.length
+          ? notesEleve.reduce((t, n) => t + n.valeur, 0) / notesEleve.length
+          : null;
+        return {
+          Élève: `${inscription.eleve.nom} ${inscription.eleve.prenom}`,
+          Matricule: inscription.eleve.matricule,
+          Classe: inscription.classe.nom,
+          Niveau: inscription.classe.niveau.libelle,
+          Bimestre: periodeNombre,
+          'Nombre de notes': notesEleve.length,
+          Moyenne: moyenne === null ? '' : Math.round(moyenne * 100) / 100,
+        };
+      })
+      .sort((a, b) => (b.Moyenne || -1) - (a.Moyenne || -1));
+
+    envoyerExcel(
+      res,
+      lignes,
+      'Résultats',
+      `resultats-bimestre-${periodeNombre}.xlsx`
+    );
   } catch (err) {
     next(err);
   }

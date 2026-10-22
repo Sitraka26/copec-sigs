@@ -17,46 +17,70 @@ export default function Rapports() {
       .then(({ data }) => {
         setAnnees(data);
         const active = data.find((a) => a.active) || data[0];
-        if (active) setAnneeId(active.id);
+
+        if (active) {
+          setAnneeId(active.id);
+        }
       })
-      .catch((err) => setErreur(err.response?.data?.error || 'Erreur de chargement'))
+      .catch((err) =>
+        setErreur(
+          err.response?.data?.error || 'Erreur de chargement'
+        )
+      )
       .finally(() => setChargement(false));
   }, []);
 
   useEffect(() => {
     if (!anneeId) return;
+
     setChargementSynthese(true);
+
     api
       .get(`/rapports/synthese?anneeScolaireId=${anneeId}`)
       .then(({ data }) => setSynthese(data))
-      .catch((err) => setErreur(err.response?.data?.error || 'Erreur de chargement de la synthèse'))
+      .catch((err) =>
+        setErreur(
+          err.response?.data?.error ||
+            'Erreur de chargement de la synthèse'
+        )
+      )
       .finally(() => setChargementSynthese(false));
   }, [anneeId]);
 
   async function telecharger(cle, url, nomFichier) {
     setTelechargementEnCours(cle);
     setErreur('');
+
     try {
-      const reponse = await api.get(url, { responseType: 'blob' });
+      const reponse = await api.get(url, {
+        responseType: 'blob',
+      });
+
       const lienUrl = window.URL.createObjectURL(
         new Blob([reponse.data], {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         })
       );
+
       const lien = document.createElement('a');
       lien.href = lienUrl;
       lien.download = nomFichier;
       lien.click();
+
       window.URL.revokeObjectURL(lienUrl);
     } catch (err) {
-      setErreur('Erreur lors du téléchargement du rapport');
+      setErreur(
+        'Erreur lors du téléchargement du rapport'
+      );
     } finally {
       setTelechargementEnCours(null);
     }
   }
 
   function formaterMontant(montant) {
-    return `${new Intl.NumberFormat('fr-FR').format(montant || 0)} Ar`;
+    return `${new Intl.NumberFormat('fr-FR').format(
+      montant || 0
+    )} Ar`;
   }
 
   if (chargement) {
@@ -74,7 +98,11 @@ export default function Rapports() {
         <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-600 mb-1">
           Analyse
         </p>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Rapports</h1>
+
+        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+          Rapports
+        </h1>
+
         <p className="text-sm text-slate-500 mt-1">
           Synthèse de l’établissement et exports Excel prêts à archiver
         </p>
@@ -90,11 +118,15 @@ export default function Rapports() {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-6">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
           <div>
-            <h2 className="font-semibold text-slate-800 text-sm">Synthèse de l’année</h2>
+            <h2 className="font-semibold text-slate-800 text-sm">
+              Synthèse de l’année
+            </h2>
+
             <p className="text-xs text-slate-500 mt-0.5">
               Indicateurs selon l’année scolaire sélectionnée
             </p>
           </div>
+
           <select
             className="border border-slate-200 rounded-xl px-3.5 py-2 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
             value={anneeId}
@@ -109,60 +141,107 @@ export default function Rapports() {
         </div>
 
         {chargementSynthese ? (
-          <p className="text-sm text-slate-400">Calcul de la synthèse…</p>
+          <p className="text-sm text-slate-400">
+            Calcul de la synthèse…
+          </p>
         ) : (
           synthese && (
             <>
+              {/* 4 indicateurs principaux */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Élèves */}
                 <div className="bg-white rounded-2xl border border-blue-100 shadow-sm p-4 border-t-4 border-t-blue-500">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
                     Élèves inscrits
                   </p>
-                  <p className="text-xl font-bold text-slate-900 mt-1">{synthese.eleves}</p>
+
+                  <p className="text-xl font-bold text-slate-900 mt-1">
+                    {synthese.eleves}
+                  </p>
                 </div>
+
+                {/* Classes */}
                 <div className="bg-white rounded-2xl border border-violet-100 shadow-sm p-4 border-t-4 border-t-violet-500">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">
                     Classes actives
                   </p>
-                  <p className="text-xl font-bold text-slate-900 mt-1">{synthese.classes}</p>
+
+                  <p className="text-xl font-bold text-slate-900 mt-1">
+                    {synthese.classes}
+                  </p>
                 </div>
+
+                {/* Absences */}
                 <div className="bg-white rounded-2xl border border-orange-100 shadow-sm p-4 border-t-4 border-t-orange-500">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600">
                     Absences
                   </p>
+
                   <p className="text-xl font-bold text-slate-900 mt-1">
                     {synthese.scolarite?.absences ?? 0}
                   </p>
                 </div>
+
+                {/* Moyenne */}
                 <div className="bg-white rounded-2xl border border-emerald-100 shadow-sm p-4 border-t-4 border-t-emerald-500">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">
                     Moyenne des notes
                   </p>
+
                   <p className="text-xl font-bold text-slate-900 mt-1 tabular-nums">
                     {synthese.scolarite?.moyenne ?? '—'}
-                    <span className="text-sm font-normal text-slate-400">/20</span>
+                    <span className="text-sm font-normal text-slate-400">
+                      /20
+                    </span>
                   </p>
                 </div>
               </div>
 
+              {/* Retards */}
+              {synthese?.scolarite && (
+                <p className="text-xs text-slate-500 mt-3">
+                  Retards :{' '}
+                  <strong>
+                    {synthese.scolarite.retards ?? 0}
+                  </strong>
+
+                  {synthese.scolarite.minutesRetardTotal != null && (
+                    <>
+                      {' '}
+                      · total{' '}
+                      {synthese.scolarite.minutesRetardTotal} min
+                    </>
+                  )}
+                </p>
+              )}
+
+              {/* Paiements */}
               {synthese.paiements && (
                 <div className="flex flex-wrap gap-4 mt-5 p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm text-slate-600">
                   <span>
                     Recettes :{' '}
                     <strong className="text-slate-900">
-                      {formaterMontant(synthese.paiements.total)}
+                      {formaterMontant(
+                        synthese.paiements.total
+                      )}
                     </strong>
                   </span>
+
                   <span>
                     Droits :{' '}
                     <strong className="text-slate-900">
-                      {formaterMontant(synthese.paiements.droit)}
+                      {formaterMontant(
+                        synthese.paiements.droit
+                      )}
                     </strong>
                   </span>
+
                   <span>
                     Écolage :{' '}
                     <strong className="text-slate-900">
-                      {formaterMontant(synthese.paiements.ecolage)}
+                      {formaterMontant(
+                        synthese.paiements.ecolage
+                      )}
                     </strong>
                   </span>
                 </div>
@@ -173,27 +252,50 @@ export default function Rapports() {
       </div>
 
       {/* Exports */}
-      <h2 className="text-sm font-semibold text-slate-700 mb-3">Exports Excel</h2>
+      <h2 className="text-sm font-semibold text-slate-700 mb-3">
+        Exports Excel
+      </h2>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl">
+        {/* Liste des élèves */}
         <div className="bg-white rounded-2xl border border-blue-100 shadow-sm p-5 border-l-4 border-l-blue-500">
-          <h3 className="font-semibold text-blue-700 text-sm mb-1">Liste des élèves</h3>
+          <h3 className="font-semibold text-blue-700 text-sm mb-1">
+            Liste des élèves
+          </h3>
+
           <p className="text-xs text-slate-500 mb-4">
             Tous les élèves inscrits, avec leur classe actuelle.
           </p>
+
           <button
-            onClick={() => telecharger('eleves', '/rapports/eleves', 'eleves.xlsx')}
-            disabled={telechargementEnCours === 'eleves'}
+            onClick={() =>
+              telecharger(
+                'eleves',
+                '/rapports/eleves',
+                'eleves.xlsx'
+              )
+            }
+            disabled={
+              telechargementEnCours === 'eleves'
+            }
             className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 shadow-lg shadow-blue-700/20 transition"
           >
-            {telechargementEnCours === 'eleves' ? 'Génération…' : 'Télécharger Excel'}
+            {telechargementEnCours === 'eleves'
+              ? 'Génération…'
+              : 'Télécharger Excel'}
           </button>
         </div>
 
+        {/* Absences et retards */}
         <div className="bg-white rounded-2xl border border-orange-100 shadow-sm p-5 border-l-4 border-l-orange-500">
-          <h3 className="font-semibold text-orange-700 text-sm mb-1">Absences et retards</h3>
+          <h3 className="font-semibold text-orange-700 text-sm mb-1">
+            Absences et retards
+          </h3>
+
           <p className="text-xs text-slate-500 mb-4">
-            Élève, classe, date, statut, justification et contact d’urgence.
+            Élève, classe, date, statut, minutes de retard, justification et contact d’urgence.
           </p>
+
           <button
             onClick={() =>
               telecharger(
@@ -202,18 +304,28 @@ export default function Rapports() {
                 'absences.xlsx'
               )
             }
-            disabled={telechargementEnCours === 'absences' || !anneeId}
+            disabled={
+              telechargementEnCours === 'absences' ||
+              !anneeId
+            }
             className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-500 hover:to-orange-600 disabled:opacity-50 shadow-lg shadow-orange-600/20 transition"
           >
-            {telechargementEnCours === 'absences' ? 'Génération…' : 'Télécharger Excel'}
+            {telechargementEnCours === 'absences'
+              ? 'Génération…'
+              : 'Télécharger Excel'}
           </button>
         </div>
 
+        {/* Résultats scolaires */}
         <div className="bg-white rounded-2xl border border-emerald-100 shadow-sm p-5 border-l-4 border-l-emerald-500">
-          <h3 className="font-semibold text-emerald-700 text-sm mb-1">Résultats scolaires</h3>
+          <h3 className="font-semibold text-emerald-700 text-sm mb-1">
+            Résultats scolaires
+          </h3>
+
           <p className="text-xs text-slate-500 mb-3">
             Moyenne et nombre de notes par élève pour un bimestre.
           </p>
+
           <select
             className="border border-slate-200 rounded-xl px-3 py-2 text-sm mb-3 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
             value={periode}
@@ -225,6 +337,7 @@ export default function Rapports() {
               </option>
             ))}
           </select>
+
           <div>
             <button
               onClick={() =>
@@ -234,17 +347,29 @@ export default function Rapports() {
                   `resultats-bimestre-${periode}.xlsx`
                 )
               }
-              disabled={telechargementEnCours === 'resultats' || !anneeId}
+              disabled={
+                telechargementEnCours === 'resultats' ||
+                !anneeId
+              }
               className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 disabled:opacity-50 shadow-lg shadow-emerald-600/20 transition"
             >
-              {telechargementEnCours === 'resultats' ? 'Génération…' : 'Télécharger Excel'}
+              {telechargementEnCours === 'resultats'
+                ? 'Génération…'
+                : 'Télécharger Excel'}
             </button>
           </div>
         </div>
 
+        {/* Historique des paiements */}
         <div className="bg-white rounded-2xl border border-violet-100 shadow-sm p-5 border-l-4 border-l-violet-500">
-          <h3 className="font-semibold text-violet-700 text-sm mb-1">Historique des paiements</h3>
-          <p className="text-xs text-slate-500 mb-3">Pour l’année scolaire sélectionnée.</p>
+          <h3 className="font-semibold text-violet-700 text-sm mb-1">
+            Historique des paiements
+          </h3>
+
+          <p className="text-xs text-slate-500 mb-3">
+            Pour l’année scolaire sélectionnée.
+          </p>
+
           <select
             className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm mb-3 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
             value={anneeId}
@@ -256,6 +381,7 @@ export default function Rapports() {
               </option>
             ))}
           </select>
+
           <button
             onClick={() =>
               telecharger(
@@ -264,10 +390,14 @@ export default function Rapports() {
                 'paiements.xlsx'
               )
             }
-            disabled={telechargementEnCours === 'paiements'}
+            disabled={
+              telechargementEnCours === 'paiements'
+            }
             className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-violet-600 to-violet-700 hover:from-violet-500 hover:to-violet-600 disabled:opacity-50 shadow-lg shadow-violet-600/20 transition"
           >
-            {telechargementEnCours === 'paiements' ? 'Génération…' : 'Télécharger Excel'}
+            {telechargementEnCours === 'paiements'
+              ? 'Génération…'
+              : 'Télécharger Excel'}
           </button>
         </div>
       </div>

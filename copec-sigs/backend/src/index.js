@@ -29,6 +29,7 @@ const certificatRoutes = require('./routes/certificat.routes');
 const path = require('path');
 const disciplineRoutes = require('./routes/discipline.routes');
 const app = express();
+const utilisateurRoutes = require('./routes/utilisateur.routes');
 
 
 app.use(cors());
@@ -71,6 +72,8 @@ app.use('/api/certificats', certificatRoutes);
 app.use('/static', express.static(path.join(__dirname, '../public')));
 app.use('/api/disciplines', disciplineRoutes);
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/api/salaires', require('./routes/salaire.routes'));
+app.use('/api/utilisateurs', utilisateurRoutes);
 
 app.use(errorHandler);
 

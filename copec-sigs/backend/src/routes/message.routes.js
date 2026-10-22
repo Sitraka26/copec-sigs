@@ -1,14 +1,30 @@
 const express = require('express');
 const { authRequired, requireRole } = require('../middlewares/auth');
-const { lister, compterNonLus, marquerLu, envoyer, listerEnvoyes } = require('../controllers/message.controller');
+const {
+  listerRecus,
+  listerEnvoyes,
+  envoyer,
+  marquerLu,
+  nombreNonLus,
+} = require('../controllers/message.controller');
 
 const router = express.Router();
+
 router.use(authRequired);
 
-router.get('/', lister);
-router.get('/non-lus/nombre', compterNonLus);
-router.get('/envoyes', requireRole('ADMIN', 'DIRECTEUR'), listerEnvoyes);
-router.post('/', requireRole('ADMIN', 'DIRECTEUR'), envoyer);
+const TOUS = [
+  'ADMIN',
+  'DIRECTEUR',
+  'SECRETAIRE',
+  'ECONOME',
+  'ENSEIGNANT',
+  'SURVEILLANT',
+];
+
+router.get('/', listerRecus);
+router.get('/envoyes', listerEnvoyes);
+router.get('/non-lus/nombre', nombreNonLus);
 router.patch('/:id/lu', marquerLu);
+router.post('/', requireRole(...TOUS), envoyer);
 
 module.exports = router;

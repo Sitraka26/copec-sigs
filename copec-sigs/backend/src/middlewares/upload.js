@@ -25,6 +25,7 @@ function filtreFichier(_req, file, cb) {
 const uploadEleves = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
+
   fileFilter: filtreFichier,
 });
 

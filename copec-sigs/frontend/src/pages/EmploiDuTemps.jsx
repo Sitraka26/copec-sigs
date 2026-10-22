@@ -122,9 +122,32 @@ export default function EmploiDuTemps() {
     if (!classesVisibles.some((classe) => classe.id === classeId)) setClasseId(classesVisibles[0].id);
   }, [sectionActive, cycleSecondaire, classesVisibles, classeId]);
 
-  const limitesHoraires = estSecondaire
-    ? { matinFin: '12:00', apresMidiDebut: '13:00', apresMidiFin: '18:00' }
-    : { matinFin: '11:30', apresMidiDebut: '13:00', apresMidiFin: '16:30' };
+   const cycleClasse = obtenirCycle(classeSelectionnee || {});
+  const limitesHoraires = (() => {
+    if (cycleClasse === 'COLLEGE') {
+      return {
+        matinDebut: '07:00',
+        matinFin: '11:30',
+        apresMidiDebut: '14:00',
+        apresMidiFin: '17:00',
+      };
+    }
+    if (cycleClasse === 'LYCEE') {
+      return {
+        matinDebut: '07:00',
+        matinFin: '11:30',
+        apresMidiDebut: '14:00',
+        apresMidiFin: '18:00',
+      };
+    }
+    // PRESCOLAIRE + PRIMAIRE
+    return {
+      matinDebut: '08:00',
+      matinFin: '11:15',
+      apresMidiDebut: '14:00',
+      apresMidiFin: '16:30',
+    };
+  })();
   const seancesDuJour = (jour) => seances.filter((seance) => seance.jour === jour);
 
   function ouvrirModale() {
@@ -138,12 +161,12 @@ export default function EmploiDuTemps() {
         && ens.matieres.some((matiere) => matiere.matiereId === premiereMatiere))
       : enseignants;
     setFormulaire({
-      matiereId: premiereMatiere,
-      enseignantId: enseignantsCompatibles[0]?.id || '',
-      jour: 1,
-      heureDebut: '08:00',
-      heureFin: '09:00',
-    });
+  matiereId: premiereMatiere,
+  enseignantId: enseignantsCompatibles[0]?.id || '',
+  jour: 1,
+  heureDebut: limitesHoraires.matinDebut,
+  heureFin: estSecondaire ? '08:00' : '09:00',
+});
     setErreur('');
     setModaleOuverte(true);
   }
@@ -166,13 +189,17 @@ export default function EmploiDuTemps() {
       setErreur('Aucun enseignant habilité pour cette matière. Assignez-en un depuis la gestion des enseignants.');
       return;
     }
-    const { heureDebut, heureFin } = formulaire;
-    const estMatin = heureDebut < limitesHoraires.matinFin;
+        const { heureDebut, heureFin } = formulaire;
+    const estMatin = heureDebut < '12:00';
     const horaireValide = estMatin
-      ? heureFin <= limitesHoraires.matinFin
+      ? heureDebut >= limitesHoraires.matinDebut && heureFin <= limitesHoraires.matinFin
       : heureDebut >= limitesHoraires.apresMidiDebut && heureFin <= limitesHoraires.apresMidiFin;
+
     if (!horaireValide) {
-      setErreur(`Horaire invalide : matin jusqu'à ${limitesHoraires.matinFin}, après-midi de ${limitesHoraires.apresMidiDebut} à ${limitesHoraires.apresMidiFin}.`);
+      setErreur(
+        `Horaire invalide : matin ${limitesHoraires.matinDebut}–${limitesHoraires.matinFin}, ` +
+          `après-midi ${limitesHoraires.apresMidiDebut}–${limitesHoraires.apresMidiFin}.`
+      );
       return;
     }
     setEnregistrement(true);
@@ -269,9 +296,10 @@ export default function EmploiDuTemps() {
         </p>
       )}
 
-      {classeSelectionnee && (
+            {classeSelectionnee && (
         <p className="text-xs text-slate-500 mb-4">
-          Horaires autorisés : matin jusqu'à {limitesHoraires.matinFin} ; après-midi de {limitesHoraires.apresMidiDebut} à {limitesHoraires.apresMidiFin}.
+          Horaires autorisés : matin {limitesHoraires.matinDebut}–{limitesHoraires.matinFin}
+          {' · '}après-midi {limitesHoraires.apresMidiDebut}–{limitesHoraires.apresMidiFin}.
         </p>
       )}
 

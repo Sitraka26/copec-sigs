@@ -1,7 +1,20 @@
 import { useEffect, useState, useMemo } from 'react';
 import api from '../api/client';
 
-const CHAMPS_VIDES = { nom: '', prenom: '', email: '', telephone: '' };
+const CHAMPS_VIDES = {
+  nom: '',
+  prenom: '',
+  email: '',
+  telephone: '',
+  cyclePrincipal: '',
+};
+
+const LIBELLES_CYCLE = {
+  PRESCOLAIRE: 'Préscolaire',
+  PRIMAIRE: 'Primaire',
+  COLLEGE: 'Collège',
+  LYCEE: 'Lycée',
+};
 
 export default function Enseignants() {
   const [enseignants, setEnseignants] = useState([]);
@@ -14,6 +27,14 @@ export default function Enseignants() {
   const [modaleVoir, setModaleVoir] = useState(false);
   const [modaleEdit, setModaleEdit] = useState(false);
   const [modaleMatieres, setModaleMatieres] = useState(false);
+    const [modaleIndispos, setModaleIndispos] = useState(false);
+  const [indispos, setIndispos] = useState([]);
+  const [formIndispo, setFormIndispo] = useState({
+    jour: 1,
+    heureDebut: '07:00',
+    heureFin: '09:00',
+    motif: 'Autre école',
+  });
 
   const [formulaire, setFormulaire] = useState(CHAMPS_VIDES);
   const [editionId, setEditionId] = useState(null);
@@ -25,6 +46,12 @@ export default function Enseignants() {
   const [recherche, setRecherche] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_TAILLE = 10;
+
+  const estSecondaireForm =
+    formulaire.cyclePrincipal === 'COLLEGE' || formulaire.cyclePrincipal === 'LYCEE';
+  const estPolyvalentForm =
+    formulaire.cyclePrincipal === 'PRESCOLAIRE' ||
+    formulaire.cyclePrincipal === 'PRIMAIRE';
 
   async function chargerEnseignants() {
     setChargement(true);
@@ -41,14 +68,17 @@ export default function Enseignants() {
 
   useEffect(() => {
     chargerEnseignants();
-    api.get('/matieres').then((r) => setMatieres(r.data)).catch(() => {});
+    api
+      .get('/matieres')
+      .then((r) => setMatieres(r.data))
+      .catch(() => {});
   }, []);
 
   const filtrés = useMemo(() => {
     const q = recherche.trim().toLowerCase();
     if (!q) return enseignants;
     return enseignants.filter((e) =>
-      `${e.utilisateur.nom} ${e.utilisateur.prenom} ${e.utilisateur.email || ''}`
+      `${e.utilisateur.nom} ${e.utilisateur.prenom} ${e.utilisateur.email || ''} ${e.cyclePrincipal || ''}`
         .toLowerCase()
         .includes(q)
     );
@@ -58,11 +88,20 @@ export default function Enseignants() {
   const affichage = filtrés.slice((page - 1) * PAGE_TAILLE, page * PAGE_TAILLE);
 
   function majChamp(champ, valeur) {
-    setFormulaire((f) => ({ ...f, [champ]: valeur }));
+    setFormulaire((f) => {
+      const next = { ...f, [champ]: valeur };
+      if (champ === 'cyclePrincipal') {
+        if (valeur === 'PRESCOLAIRE' || valeur === 'PRIMAIRE') {
+          setMatieresSelectionnees([]);
+        }
+      }
+      return next;
+    });
   }
 
   function ouvrirAjout() {
     setFormulaire(CHAMPS_VIDES);
+    setMatieresSelectionnees([]);
     setErreur('');
     setMdpTemporaire(null);
     setModaleAjout(true);
@@ -72,7 +111,19 @@ export default function Enseignants() {
     e.preventDefault();
     setErreur('');
     try {
-      const { data } = await api.post('/enseignants', formulaire);
+      const payload = {
+        ...formulaire,
+        matiereIds: estSecondaireForm ? matieresSelectionnees : [],
+      };
+      if (estSecondaireForm && payload.matiereIds.length === 0) {
+        setErreur('Choisissez au moins une matière (max 2)');
+        return;
+      }
+      if (payload.matiereIds.length > 2) {
+        setErreur('Maximum 2 matières');
+        return;
+      }
+      const { data } = await api.post('/enseignants', payload);
       setModaleAjout(false);
       setMdpTemporaire({
         email: data.utilisateur?.email || formulaire.email,
@@ -97,7 +148,11 @@ export default function Enseignants() {
       prenom: ens.utilisateur.prenom,
       email: ens.utilisateur.email,
       telephone: ens.telephone || '',
+      cyclePrincipal: ens.cyclePrincipal || '',
     });
+    setMatieresSelectionnees(
+      (ens.matieres || []).map((m) => m.matiereId || m.matiere?.id || m.id)
+    );
     setModaleEdit(true);
   }
 
@@ -119,18 +174,29 @@ export default function Enseignants() {
     setMatieresSelectionnees(
       (ens.matieres || []).map((m) => m.matiereId || m.matiere?.id || m.id)
     );
+    setErreur('');
     setModaleMatieres(true);
   }
 
   function toggleMatiere(id) {
-    setMatieresSelectionnees((cur) =>
-      cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
-    );
+    setMatieresSelectionnees((cur) => {
+      if (cur.includes(id)) return cur.filter((x) => x !== id);
+      if (cur.length >= 2) {
+        setErreur('Maximum 2 matières');
+        return cur;
+      }
+      setErreur('');
+      return [...cur, id];
+    });
   }
 
   async function soumettreMatieres(e) {
     e.preventDefault();
     setErreur('');
+    if (matieresSelectionnees.length > 2) {
+      setErreur('Maximum 2 matières');
+      return;
+    }
     try {
       await api.patch(`/enseignants/${enseignantSelectionne.id}/matieres`, {
         matiereIds: matieresSelectionnees,
@@ -140,6 +206,56 @@ export default function Enseignants() {
       await chargerEnseignants();
     } catch (err) {
       setErreur(err.response?.data?.error || "Erreur lors de l'assignation des matières");
+    }
+  }
+    async function ouvrirIndispos(ens) {
+    setEnseignantSelectionne(ens);
+    setErreur('');
+    setFormIndispo({
+      jour: 1,
+      heureDebut: '07:00',
+      heureFin: '09:00',
+      motif: 'Autre école',
+    });
+    try {
+      const { data } = await api.get(`/enseignants/${ens.id}/indisponibilites`);
+      setIndispos(data || []);
+      setModaleIndispos(true);
+    } catch (err) {
+      setErreur(err.response?.data?.error || 'Erreur chargement indisponibilités');
+    }
+  }
+
+  async function ajouterIndispo(e) {
+    e.preventDefault();
+    if (!enseignantSelectionne) return;
+    setErreur('');
+    try {
+      await api.post(
+        `/enseignants/${enseignantSelectionne.id}/indisponibilites`,
+        formIndispo
+      );
+      const { data } = await api.get(
+        `/enseignants/${enseignantSelectionne.id}/indisponibilites`
+      );
+      setIndispos(data || []);
+      setMessage('Indisponibilité ajoutée');
+    } catch (err) {
+      setErreur(err.response?.data?.error || 'Erreur ajout');
+    }
+  }
+
+  async function supprimerIndispo(indispoId) {
+    if (!enseignantSelectionne) return;
+    if (!confirm('Supprimer cette indisponibilité ?')) return;
+    try {
+      await api.delete(
+        `/enseignants/${enseignantSelectionne.id}/indisponibilites/${indispoId}`
+      );
+      setIndispos((list) => list.filter((i) => i.id !== indispoId));
+      setMessage('Indisponibilité supprimée');
+    } catch (err) {
+      setErreur(err.response?.data?.error || 'Erreur suppression');
     }
   }
 
@@ -181,14 +297,19 @@ export default function Enseignants() {
   }
 
   function exporterCSV() {
-    const rows = [['Nom', 'Prénom', 'Email', 'Téléphone', 'Matières']];
+    const rows = [['Nom', 'Prénom', 'Email', 'Téléphone', 'Cycle', 'Matières']];
     for (const e of filtrés) {
+      const mat =
+        e.cyclePrincipal === 'PRESCOLAIRE' || e.cyclePrincipal === 'PRIMAIRE'
+          ? 'Tous'
+          : (e.matieres || []).map((m) => m.matiere?.nom || m.matiereId).join('; ');
       rows.push([
         e.utilisateur.nom,
         e.utilisateur.prenom,
         e.utilisateur.email || '',
         e.telephone || '',
-        (e.matieres || []).map((m) => m.matiere?.nom || m.matiereId).join('; '),
+        e.cyclePrincipal || '',
+        mat,
       ]);
     }
     const csv = rows
@@ -210,7 +331,6 @@ export default function Enseignants() {
 
   return (
     <div className="p-4 sm:p-8 min-h-full">
-      {/* En-tête */}
       <div className="flex flex-wrap justify-between items-start gap-4 mb-6">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-600 mb-1">
@@ -242,13 +362,12 @@ export default function Enseignants() {
           {message}
         </p>
       )}
-      {erreur && !modaleAjout && !modaleEdit && (
+      {erreur && !modaleAjout && !modaleEdit && !modaleMatieres && !modaleIndispos && (
         <p className="text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 text-sm mb-4">
           {erreur}
         </p>
       )}
 
-      {/* Mot de passe temporaire */}
       {mdpTemporaire && (
         <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm shadow-sm">
           <p className="font-semibold text-amber-900 mb-1">Identifiants à communiquer</p>
@@ -274,11 +393,10 @@ export default function Enseignants() {
         </div>
       )}
 
-      {/* Recherche */}
       <div className="mb-5 relative max-w-md">
         <input
           className="w-full border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-          placeholder="Rechercher par nom, prénom ou email…"
+          placeholder="Rechercher par nom, prénom, email ou cycle…"
           value={recherche}
           onChange={(e) => {
             setRecherche(e.target.value);
@@ -304,6 +422,7 @@ export default function Enseignants() {
                 <tr className="bg-slate-50/80 border-b border-slate-100 text-left text-[11px] uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3 font-semibold">Nom</th>
                   <th className="px-4 py-3 font-semibold">Prénom</th>
+                  <th className="px-4 py-3 font-semibold">Cycle</th>
                   <th className="px-4 py-3 font-semibold">Email</th>
                   <th className="px-4 py-3 font-semibold">Téléphone</th>
                   <th className="px-4 py-3 font-semibold">Matières</th>
@@ -313,25 +432,41 @@ export default function Enseignants() {
               <tbody className="divide-y divide-slate-50">
                 {affichage.map((e) => (
                   <tr key={e.id} className="hover:bg-blue-50/40 transition-colors">
-                    <td className="px-4 py-3 font-semibold text-slate-900">{e.utilisateur.nom}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-900">
+                      {e.utilisateur.nom}
+                    </td>
                     <td className="px-4 py-3 text-slate-700">{e.utilisateur.prenom}</td>
-                    <td className="px-4 py-3 text-slate-600 text-xs">{e.utilisateur.email}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                        {LIBELLES_CYCLE[e.cyclePrincipal] || e.cyclePrincipal || '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 text-xs">
+                      {e.utilisateur.email}
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{e.telephone || '—'}</td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {(e.matieres || []).length === 0 ? (
-                          <span className="text-slate-400 text-xs">—</span>
-                        ) : (
-                          (e.matieres || []).map((m) => (
-                            <span
-                              key={m.id || m.matiere?.id}
-                              className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100"
-                            >
-                              {m.matiere?.nom || ''}
-                            </span>
-                          ))
-                        )}
-                      </div>
+                      {e.cyclePrincipal === 'PRESCOLAIRE' ||
+                      e.cyclePrincipal === 'PRIMAIRE' ? (
+                        <span className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100">
+                          Tous
+                        </span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {(e.matieres || []).length === 0 ? (
+                            <span className="text-slate-400 text-xs">—</span>
+                          ) : (
+                            (e.matieres || []).map((m) => (
+                              <span
+                                key={m.id || m.matiere?.id}
+                                className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100"
+                              >
+                                {m.matiere?.nom || ''}
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1.5 justify-end">
@@ -347,12 +482,24 @@ export default function Enseignants() {
                         >
                           Modifier
                         </button>
-                        <button
-                          onClick={() => ouvrirMatieres(e)}
-                          className="px-2.5 py-1 text-xs font-medium rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50 transition"
-                        >
-                          Matières
-                        </button>
+                        {/* Boutons réservés au Collège et au Lycée */}
+{(e.cyclePrincipal === 'COLLEGE' || e.cyclePrincipal === 'LYCEE') && (
+  <>
+    <button
+      onClick={() => ouvrirMatieres(e)}
+      className="px-2.5 py-1 text-xs font-medium rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50 transition"
+    >
+      Matières
+    </button>
+
+    <button
+      onClick={() => ouvrirIndispos(e)}
+      className="px-2.5 py-1 text-xs font-medium rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50 transition"
+    >
+      Indispos
+    </button>
+  </>
+)}
                         <button
                           onClick={() => reinitialiser(e)}
                           className="px-2.5 py-1 text-xs font-medium rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition"
@@ -402,8 +549,8 @@ export default function Enseignants() {
       {/* Modale ajout */}
       {modaleAjout && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-slate-100">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-slate-100 sticky top-0 bg-white">
               <h2 className="text-lg font-bold text-slate-900">Ajouter un enseignant</h2>
             </div>
             <form onSubmit={soumettreAjout} className="p-6 space-y-4">
@@ -448,16 +595,73 @@ export default function Enseignants() {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Cycle principal *
+                </label>
+                <select
+                  className={inputClass}
+                  value={formulaire.cyclePrincipal || ''}
+                  onChange={(e) => majChamp('cyclePrincipal', e.target.value)}
+                  required
+                >
+                  <option value="">— Choisir —</option>
+                  <option value="PRESCOLAIRE">Préscolaire</option>
+                  <option value="PRIMAIRE">Primaire</option>
+                  <option value="COLLEGE">Collège (1er cycle)</option>
+                  <option value="LYCEE">Lycée (2e cycle)</option>
+                </select>
+              </div>
+
+              {estPolyvalentForm && (
+                <p className="text-xs text-sky-700 bg-sky-50 border border-sky-100 rounded-xl px-3 py-2">
+                  Préscolaire / Primaire : enseignant polyvalent — matières ={' '}
+                  <strong>Tous</strong>
+                </p>
+              )}
+
+              {estSecondaireForm && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                    Matières * (max 2)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                    {matieres.map((m) => (
+                      <label
+                        key={m.id}
+                        className={`flex items-center gap-2 border rounded-xl px-3 py-2 cursor-pointer text-sm ${
+                          matieresSelectionnees.includes(m.id)
+                            ? 'border-violet-300 bg-violet-50'
+                            : 'border-slate-200'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={matieresSelectionnees.includes(m.id)}
+                          onChange={() => toggleMatiere(m.id)}
+                        />
+                        {m.nom}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    {matieresSelectionnees.length}/2 sélectionnée(s)
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
                   Téléphone
                 </label>
                 <input
                   className={inputClass}
                   value={formulaire.telephone}
                   onChange={(e) => majChamp('telephone', e.target.value)}
+                  placeholder="0341234567"
                 />
               </div>
               <p className="text-xs text-slate-500">
-                Un mot de passe temporaire sera généré et affiché une seule fois après la création.
+                Un mot de passe temporaire sera généré et affiché une seule fois après la
+                création.
               </p>
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
@@ -488,9 +692,20 @@ export default function Enseignants() {
             </div>
             <div className="p-6 space-y-3">
               <p className="font-semibold text-slate-900 text-base">
-                {enseignantSelectionne.utilisateur.nom} {enseignantSelectionne.utilisateur.prenom}
+                {enseignantSelectionne.utilisateur.nom}{' '}
+                {enseignantSelectionne.utilisateur.prenom}
               </p>
-              <p className="text-sm text-slate-600">{enseignantSelectionne.utilisateur.email}</p>
+              <p className="text-sm text-slate-600">
+                {enseignantSelectionne.utilisateur.email}
+              </p>
+              <p className="text-sm text-slate-600">
+                Cycle :{' '}
+                <strong>
+                  {LIBELLES_CYCLE[enseignantSelectionne.cyclePrincipal] ||
+                    enseignantSelectionne.cyclePrincipal ||
+                    '—'}
+                </strong>
+              </p>
               <p className="text-sm text-slate-600">
                 {enseignantSelectionne.telephone || 'Pas de téléphone'}
               </p>
@@ -499,7 +714,12 @@ export default function Enseignants() {
                   Matières
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {(enseignantSelectionne.matieres || []).length === 0 ? (
+                  {enseignantSelectionne.cyclePrincipal === 'PRESCOLAIRE' ||
+                  enseignantSelectionne.cyclePrincipal === 'PRIMAIRE' ? (
+                    <span className="inline-flex text-xs font-semibold px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100">
+                      Tous
+                    </span>
+                  ) : (enseignantSelectionne.matieres || []).length === 0 ? (
                     <span className="text-sm text-slate-400">Aucune</span>
                   ) : (
                     (enseignantSelectionne.matieres || []).map((m) => (
@@ -514,12 +734,6 @@ export default function Enseignants() {
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                <a
-                  href={`/emploi-du-temps?enseignantId=${enseignantSelectionne.id}`}
-                  className="px-3 py-2 rounded-xl border border-blue-200 text-blue-700 text-sm font-medium hover:bg-blue-50 transition"
-                >
-                  Emploi du temps
-                </a>
                 <button
                   onClick={() => setModaleVoir(false)}
                   className="px-4 py-2 text-sm font-medium rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
@@ -581,6 +795,23 @@ export default function Enseignants() {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Cycle principal *
+                </label>
+                <select
+                  className={inputClass}
+                  value={formulaire.cyclePrincipal || ''}
+                  onChange={(e) => majChamp('cyclePrincipal', e.target.value)}
+                  required
+                >
+                  <option value="">— Choisir —</option>
+                  <option value="PRESCOLAIRE">Préscolaire</option>
+                  <option value="PRIMAIRE">Primaire</option>
+                  <option value="COLLEGE">Collège (1er cycle)</option>
+                  <option value="LYCEE">Lycée (2e cycle)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
                   Téléphone
                 </label>
                 <input
@@ -609,7 +840,7 @@ export default function Enseignants() {
         </div>
       )}
 
-      {/* Modale matières */}
+      {/* Modale matières (secondaire uniquement) */}
       {modaleMatieres && enseignantSelectionne && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-auto">
@@ -618,8 +849,14 @@ export default function Enseignants() {
                 Matières — {enseignantSelectionne.utilisateur.nom}{' '}
                 {enseignantSelectionne.utilisateur.prenom}
               </h2>
+              <p className="text-xs text-slate-500 mt-1">Maximum 2 matières</p>
             </div>
             <form onSubmit={soumettreMatieres} className="p-6 space-y-4">
+              {erreur && (
+                <p className="text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 text-sm">
+                  {erreur}
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 {matieres.map((m) => (
                   <label
@@ -640,6 +877,9 @@ export default function Enseignants() {
                   </label>
                 ))}
               </div>
+              <p className="text-[11px] text-slate-400">
+                {matieresSelectionnees.length}/2 sélectionnée(s)
+              </p>
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
@@ -656,6 +896,143 @@ export default function Enseignants() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+            {modaleIndispos && enseignantSelectionne && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-auto">
+            <div className="px-6 py-4 border-b border-slate-100 sticky top-0 bg-white">
+              <h2 className="text-lg font-bold text-slate-900">
+                Indisponibilités — {enseignantSelectionne.utilisateur.nom}{' '}
+                {enseignantSelectionne.utilisateur.prenom}
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Créneaux où l’enseignant est dans une autre école (ou indisponible).
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {erreur && (
+                <p className="text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 text-sm">
+                  {erreur}
+                </p>
+              )}
+
+              <form onSubmit={ajouterIndispo} className="space-y-3 border-b border-slate-100 pb-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Jour
+                    </label>
+                    <select
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
+                      value={formIndispo.jour}
+                      onChange={(e) =>
+                        setFormIndispo((f) => ({ ...f, jour: Number(e.target.value) }))
+                      }
+                    >
+                      <option value={1}>Lundi</option>
+                      <option value={2}>Mardi</option>
+                      <option value={3}>Mercredi</option>
+                      <option value={4}>Jeudi</option>
+                      <option value={5}>Vendredi</option>
+                      <option value={6}>Samedi</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Motif
+                    </label>
+                    <input
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
+                      value={formIndispo.motif}
+                      onChange={(e) =>
+                        setFormIndispo((f) => ({ ...f, motif: e.target.value }))
+                      }
+                      placeholder="Autre école"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Début
+                    </label>
+                    <input
+                      type="time"
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
+                      value={formIndispo.heureDebut}
+                      onChange={(e) =>
+                        setFormIndispo((f) => ({ ...f, heureDebut: e.target.value }))
+                      }
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Fin
+                    </label>
+                    <input
+                      type="time"
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
+                      value={formIndispo.heureFin}
+                      onChange={(e) =>
+                        setFormIndispo((f) => ({ ...f, heureFin: e.target.value }))
+                      }
+                      required
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-orange-600 hover:bg-orange-500"
+                >
+                  Ajouter cette plage
+                </button>
+              </form>
+
+              <div>
+                <p className="text-xs font-semibold uppercase text-slate-500 mb-2">
+                  Plages enregistrées ({indispos.length})
+                </p>
+                {indispos.length === 0 ? (
+                  <p className="text-sm text-slate-400">Aucune indisponibilité.</p>
+                ) : (
+                  <ul className="divide-y divide-slate-100 border border-slate-100 rounded-xl">
+                    {indispos.map((i) => (
+                      <li
+                        key={i.id}
+                        className="px-3 py-2.5 text-sm flex justify-between items-center gap-2"
+                      >
+                        <span>
+                          <strong>{i.jourLibelle || i.jour}</strong> {i.heureDebut}–
+                          {i.heureFin}
+                          {i.motif ? (
+                            <span className="text-slate-500"> · {i.motif}</span>
+                          ) : null}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => supprimerIndispo(i.id)}
+                          className="text-xs text-red-600 hover:underline"
+                        >
+                          Suppr.
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModaleIndispos(false)}
+                  className="px-4 py-2.5 text-sm font-medium rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

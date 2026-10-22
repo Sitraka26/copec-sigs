@@ -42,7 +42,9 @@ export default function Bulletins() {
     if (!classeId || !periode) return;
     setErreur('');
     try {
-      const { data } = await api.get(`/bulletins/classe/${classeId}/periode/${periode}`);
+      const { data } = await api.get(
+        `/bulletins/classe/${classeId}/periode/${periode}`
+      );
       setApercu(data);
     } catch (err) {
       setErreur(err.response?.data?.error || "Erreur de chargement de l'aperçu");
@@ -60,20 +62,26 @@ export default function Bulletins() {
       `${r.nom} ${r.prenom}`.toLowerCase().includes(recherche.trim().toLowerCase())
     )
     .sort((a, b) => {
-      if (tri === 'nom') return `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`);
+      if (tri === 'nom') {
+        return `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`);
+      }
       if (tri === 'rang') return (a.rang ?? 9999) - (b.rang ?? 9999);
       return (b.moyenne ?? -1) - (a.moyenne ?? -1);
     });
 
   function basculerSelection(id) {
     setSelection((courante) =>
-      courante.includes(id) ? courante.filter((item) => item !== id) : [...courante, id]
+      courante.includes(id)
+        ? courante.filter((item) => item !== id)
+        : [...courante, id]
     );
   }
 
   function selectionnerTous() {
     setSelection(
-      selection.length === resultatsFiltres.length ? [] : resultatsFiltres.map((r) => r.eleveId)
+      selection.length === resultatsFiltres.length
+        ? []
+        : resultatsFiltres.map((r) => r.eleveId)
     );
   }
 
@@ -81,7 +89,9 @@ export default function Bulletins() {
     setChargementDetail(true);
     setErreur('');
     try {
-      const { data } = await api.get(`/bulletins/eleve/${eleveId}/periode/${periode}`);
+      const { data } = await api.get(
+        `/bulletins/eleve/${eleveId}/periode/${periode}`
+      );
       setDetail(data);
     } catch (err) {
       setErreur(err.response?.data?.error || 'Erreur de chargement du détail');
@@ -93,12 +103,22 @@ export default function Bulletins() {
   function exporterCSV() {
     const lignes = [['Nom', 'Prénom', 'Moyenne', 'Rang', 'Période']];
     resultatsFiltres.forEach((r) =>
-      lignes.push([r.nom, r.prenom, r.moyenne ?? '', r.rang ?? '', NOMS_PERIODES[periode]])
+      lignes.push([
+        r.nom,
+        r.prenom,
+        r.moyenne ?? '',
+        r.rang ?? '',
+        NOMS_PERIODES[periode],
+      ])
     );
     const csv = lignes
-      .map((ligne) => ligne.map((cellule) => `"${String(cellule).replace(/"/g, '""')}"`).join(','))
+      .map((ligne) =>
+        ligne.map((cellule) => `"${String(cellule).replace(/"/g, '""')}"`).join(',')
+      )
       .join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    );
     const lien = document.createElement('a');
     lien.href = url;
     lien.download = `bulletins_${classeSelectionnee?.nom || 'classe'}_${periode}.csv`;
@@ -119,10 +139,16 @@ export default function Bulletins() {
     setErreur('');
     setMessageSucces('');
     try {
+      if (!classeSelectionnee?.anneeScolaireId) {
+        setErreur(
+          'Cette classe n’a pas d’année scolaire. Vérifiez le menu Classes (année active).'
+        );
+        return;
+      }
       await api.post('/bulletins/generer', {
         classeId,
         anneeScolaireId: classeSelectionnee.anneeScolaireId,
-        periode,
+        periode: Number(periode),
       });
       setMessageSucces('Bulletins générés et enregistrés avec succès.');
       await chargerApercu();
@@ -135,19 +161,48 @@ export default function Bulletins() {
 
   async function telechargerBulletinPdf(eleveId, nomComplet) {
     setTelechargementId(eleveId);
+    setErreur('');
     try {
+      if (!classeSelectionnee?.anneeScolaireId) {
+        setErreur('Année scolaire introuvable pour cette classe.');
+        return;
+      }
       const reponse = await api.get(
         `/bulletins/eleve/${eleveId}/annee/${classeSelectionnee.anneeScolaireId}/pdf`,
         { responseType: 'blob' }
       );
-      const url = window.URL.createObjectURL(new Blob([reponse.data], { type: 'application/pdf' }));
+
+      const type = reponse.headers['content-type'] || '';
+      if (type.includes('application/json')) {
+        const texte = await reponse.data.text();
+        const json = JSON.parse(texte);
+        setErreur(json.error || 'Impossible de générer le PDF');
+        return;
+      }
+
+      const url = window.URL.createObjectURL(
+        new Blob([reponse.data], { type: 'application/pdf' })
+      );
       const lien = document.createElement('a');
       lien.href = url;
       lien.download = `bulletin_${nomComplet.replace(/\s+/g, '_')}.pdf`;
       lien.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      setErreur('Erreur lors du téléchargement du bulletin');
+      const data = err.response?.data;
+      if (data instanceof Blob) {
+        try {
+          const texte = await data.text();
+          const json = JSON.parse(texte);
+          setErreur(json.error || 'Erreur lors du téléchargement du bulletin');
+        } catch {
+          setErreur('Erreur lors du téléchargement du bulletin');
+        }
+      } else {
+        setErreur(
+          err.response?.data?.error || 'Erreur lors du téléchargement du bulletin'
+        );
+      }
     } finally {
       setTelechargementId(null);
     }
@@ -163,19 +218,17 @@ export default function Bulletins() {
 
   return (
     <div className="p-4 sm:p-8 min-h-full">
-      {/* En-tête */}
       <div className="mb-6">
         <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-600 mb-1">
           Évaluation
         </p>
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Bulletins</h1>
         <p className="text-sm text-slate-500 mt-1 max-w-2xl">
-          Génère les moyennes et rangs d’une classe pour une période, puis télécharge le bulletin
-          PDF de chaque élève.
+          Génère les moyennes et rangs d’une classe pour une période, puis télécharge le
+          bulletin PDF de chaque élève.
         </p>
       </div>
 
-      {/* Filtres */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mb-5">
         <div className="flex flex-wrap gap-4 items-end">
           <div>
@@ -263,9 +316,18 @@ export default function Bulletins() {
         </div>
       )}
 
+      {apercu &&
+        apercu.resultats.length > 0 &&
+        apercu.resultats.every((r) => r.moyenne === null) && (
+          <p className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
+            Toutes les moyennes sont vides. Vérifiez : (1) Programme du niveau avec
+            matières et coefficients <strong>enregistrés</strong>, (2) notes saisies pour
+            cette période.
+          </p>
+        )}
+
       {apercu && apercu.resultats.length > 0 && (
         <>
-                    {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
             <div className="bg-white rounded-2xl border border-blue-100 shadow-sm p-4 border-t-4 border-t-blue-500">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
@@ -275,7 +337,6 @@ export default function Bulletins() {
                 {resultatsFiltres.length}
               </p>
             </div>
-
             <div className="bg-white rounded-2xl border border-emerald-100 shadow-sm p-4 border-t-4 border-t-emerald-500">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">
                 Moyenne de classe
@@ -285,7 +346,6 @@ export default function Bulletins() {
                 <span className="text-slate-400 text-sm font-normal">/20</span>
               </p>
             </div>
-
             <div className="bg-white rounded-2xl border border-amber-100 shadow-sm p-4 border-t-4 border-t-amber-500">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-600">
                 Meilleure moyenne
@@ -295,7 +355,6 @@ export default function Bulletins() {
                 <span className="text-slate-400 text-sm font-normal">/20</span>
               </p>
             </div>
-
             <div className="bg-white rounded-2xl border border-violet-100 shadow-sm p-4 border-t-4 border-t-violet-500">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">
                 Sélectionnés
@@ -305,7 +364,7 @@ export default function Bulletins() {
               </p>
             </div>
           </div>
-          {/* Tableau */}
+
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-5">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -404,7 +463,6 @@ export default function Bulletins() {
         </>
       )}
 
-      {/* Modale détail */}
       {detail && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-auto">
@@ -415,27 +473,33 @@ export default function Bulletins() {
               </p>
             </div>
             <div className="p-6">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100">
-                    <th className="pb-2 font-semibold">Matière</th>
-                    <th className="pb-2 font-semibold">Note</th>
-                    <th className="pb-2 font-semibold">Coef.</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {detail.notes.map((note) => (
-                    <tr key={note.matiere}>
-                      <td className="py-2.5 text-slate-800">{note.matiere}</td>
-                      <td className="py-2.5 font-semibold tabular-nums">
-                        {note.valeur}
-                        <span className="text-slate-400 font-normal text-xs">/20</span>
-                      </td>
-                      <td className="py-2.5 text-slate-600">{note.coefficient}</td>
+              {detail.notes.length === 0 ? (
+                <p className="text-sm text-slate-500 mb-4">
+                  Aucune note pour cette période (programme vide ou notes non saisies).
+                </p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100">
+                      <th className="pb-2 font-semibold">Matière</th>
+                      <th className="pb-2 font-semibold">Note</th>
+                      <th className="pb-2 font-semibold">Coef.</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {detail.notes.map((note) => (
+                      <tr key={note.matiere}>
+                        <td className="py-2.5 text-slate-800">{note.matiere}</td>
+                        <td className="py-2.5 font-semibold tabular-nums">
+                          {note.valeur}
+                          <span className="text-slate-400 font-normal text-xs">/20</span>
+                        </td>
+                        <td className="py-2.5 text-slate-600">{note.coefficient}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
               <div className="mt-4 p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm">
                 Moyenne générale :{' '}
                 <strong className="text-slate-900">{detail.moyenneGenerale ?? '—'}</strong>

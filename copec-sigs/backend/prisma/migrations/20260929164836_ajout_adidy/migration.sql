@@ -1,0 +1,5 @@
+-- AlterEnum
+ALTER TYPE "TypeFrais" ADD VALUE 'ADIDY';
+
+-- AlterTable
+ALTER TABLE "BaremeFrais" ADD COLUMN     "adidy" DOUBLE PRECISION NOT NULL DEFAULT 0;

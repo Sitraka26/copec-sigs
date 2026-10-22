@@ -20,6 +20,7 @@ router.post(
     { name: 'photoIdentite', maxCount: 1 },
     { name: 'extraitNaissance', maxCount: 1 },
     { name: 'carteBapteme', maxCount: 1 },
+    { name: 'bulletinOrigine', maxCount: 1 },
   ]),
   creer
 );

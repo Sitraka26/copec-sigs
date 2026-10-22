@@ -10,6 +10,19 @@ const CHAMPS_VIDES = {
   adresse: '',
   contactUrgenceNom: '',
   contactUrgenceTel: '',
+  pereNom: '',
+  pereProfession: '',
+  mereNom: '',
+  mereProfession: '',
+  cycleVise: '',
+  vientAutreEcole: false,
+};
+
+const FICHIERS_VIDES = {
+  photoIdentite: null,
+  extraitNaissance: null,
+  carteBapteme: null,
+  bulletinOrigine: null,
 };
 
 export default function Eleves() {
@@ -18,6 +31,7 @@ export default function Eleves() {
   const [erreur, setErreur] = useState('');
   const [modaleOuverte, setModaleOuverte] = useState(false);
   const [formulaire, setFormulaire] = useState(CHAMPS_VIDES);
+  const [fichiers, setFichiers] = useState(FICHIERS_VIDES);
   const [enregistrement, setEnregistrement] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [recherche, setRecherche] = useState('');
@@ -43,33 +57,17 @@ export default function Eleves() {
     chargerEleves();
   }, []);
 
+  function reinitialiserFichiers() {
+    setFichiers(FICHIERS_VIDES);
+  }
+
   function ouvrirModale() {
     setFormulaire(CHAMPS_VIDES);
+    reinitialiserFichiers();
     setEditingId(null);
     setViewOnly(false);
     setErreur('');
     setModaleOuverte(true);
-  }
-
-  async function soumettre(e) {
-    e.preventDefault();
-    setEnregistrement(true);
-    setErreur('');
-    try {
-      if (editingId) {
-        await api.put(`/eleves/${editingId}`, formulaire);
-      } else {
-        await api.post('/eleves', formulaire);
-      }
-      setModaleOuverte(false);
-      setEditingId(null);
-      setViewOnly(false);
-      await chargerEleves();
-    } catch (err) {
-      setErreur(err.response?.data?.error || "Erreur lors de l'enregistrement");
-    } finally {
-      setEnregistrement(false);
-    }
   }
 
   function majChamp(champ, valeur) {
@@ -86,11 +84,56 @@ export default function Eleves() {
       adresse: eleve.adresse || '',
       contactUrgenceNom: eleve.contactUrgenceNom || '',
       contactUrgenceTel: eleve.contactUrgenceTel || '',
+      pereNom: eleve.pereNom || '',
+      pereProfession: eleve.pereProfession || '',
+      mereNom: eleve.mereNom || '',
+      mereProfession: eleve.mereProfession || '',
+      cycleVise: eleve.cycleVise || '',
+      vientAutreEcole: !!eleve.vientAutreEcole,
     });
+    reinitialiserFichiers();
     setEditingId(eleve.id);
     setViewOnly(!!view);
     setErreur('');
     setModaleOuverte(true);
+  }
+
+  async function soumettre(e) {
+    e.preventDefault();
+    setEnregistrement(true);
+    setErreur('');
+    try {
+      const fd = new FormData();
+      Object.entries(formulaire).forEach(([k, v]) => {
+        if (v !== null && v !== undefined) {
+          fd.append(k, v === true || v === false ? String(v) : v);
+        }
+      });
+
+      if (fichiers.photoIdentite) fd.append('photoIdentite', fichiers.photoIdentite);
+      if (fichiers.extraitNaissance) fd.append('extraitNaissance', fichiers.extraitNaissance);
+      if (fichiers.carteBapteme) fd.append('carteBapteme', fichiers.carteBapteme);
+      if (fichiers.bulletinOrigine) fd.append('bulletinOrigine', fichiers.bulletinOrigine);
+
+      if (editingId) {
+        await api.put(`/eleves/${editingId}`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        await api.post('/eleves', fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
+
+      setModaleOuverte(false);
+      setEditingId(null);
+      reinitialiserFichiers();
+      await chargerEleves();
+    } catch (err) {
+      setErreur(err.response?.data?.error || "Erreur lors de l'enregistrement");
+    } finally {
+      setEnregistrement(false);
+    }
   }
 
   async function supprimerEleve(id) {
@@ -223,7 +266,9 @@ export default function Eleves() {
       </div>
 
       {erreur && !modaleOuverte && (
-        <p className="text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 text-sm mb-4">{erreur}</p>
+        <p className="text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 text-sm mb-4">
+          {erreur}
+        </p>
       )}
 
       {chargement ? (
@@ -458,6 +503,26 @@ export default function Eleves() {
                 />
               </div>
 
+              {/* Cycle visé */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Cycle visé
+                </label>
+                <select
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-60"
+                  value={formulaire.cycleVise}
+                  onChange={(e) => majChamp('cycleVise', e.target.value)}
+                  disabled={viewOnly}
+                >
+                  <option value="">— Choisir —</option>
+                  <option value="PRESCOLAIRE">Préscolaire</option>
+                  <option value="PRIMAIRE">Primaire</option>
+                  <option value="COLLEGE">Collège</option>
+                  <option value="LYCEE">Lycée</option>
+                </select>
+              </div>
+
+              {/* Contact urgence */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
@@ -483,6 +548,125 @@ export default function Eleves() {
                 </div>
               </div>
 
+              {/* Famille */}
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-3">
+                  Famille
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Nom du père</label>
+                    <input
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-60"
+                      value={formulaire.pereNom}
+                      onChange={(e) => majChamp('pereNom', e.target.value)}
+                      disabled={viewOnly}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Profession du père</label>
+                    <input
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-60"
+                      value={formulaire.pereProfession}
+                      onChange={(e) => majChamp('pereProfession', e.target.value)}
+                      disabled={viewOnly}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Nom de la mère</label>
+                    <input
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-60"
+                      value={formulaire.mereNom}
+                      onChange={(e) => majChamp('mereNom', e.target.value)}
+                      disabled={viewOnly}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Profession de la mère</label>
+                    <input
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-60"
+                      value={formulaire.mereProfession}
+                      onChange={(e) => majChamp('mereProfession', e.target.value)}
+                      disabled={viewOnly}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Documents */}
+              {!viewOnly && (
+                <div className="border-t border-slate-100 pt-4 space-y-3">
+                  <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">
+                    Documents
+                  </p>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Photo d&apos;identité *</label>
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) =>
+                        setFichiers((f) => ({ ...f, photoIdentite: e.target.files[0] }))
+                      }
+                      required={!editingId}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">
+                      Extrait de naissance{' '}
+                      {formulaire.cycleVise === 'PRESCOLAIRE' ? '*' : '(facultatif)'}
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) =>
+                        setFichiers((f) => ({ ...f, extraitNaissance: e.target.files[0] }))
+                      }
+                      required={!editingId && formulaire.cycleVise === 'PRESCOLAIRE'}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Carte de baptême (facultatif)</label>
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) =>
+                        setFichiers((f) => ({ ...f, carteBapteme: e.target.files[0] }))
+                      }
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formulaire.vientAutreEcole}
+                      onChange={(e) => majChamp('vientAutreEcole', e.target.checked)}
+                      className="rounded border-slate-300"
+                    />
+                    Élève en transfert (vient d&apos;une autre école)
+                  </label>
+
+                  {formulaire.vientAutreEcole && (
+                    <div>
+                      <label className="block text-xs text-slate-600 mb-1">
+                        Bulletin de l&apos;école d&apos;origine *
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/*,.pdf"
+                        onChange={(e) =>
+                          setFichiers((f) => ({ ...f, bulletinOrigine: e.target.files[0] }))
+                        }
+                        required={!editingId}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Boutons d'action */}
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
@@ -504,8 +688,8 @@ export default function Eleves() {
                     {enregistrement
                       ? 'Enregistrement…'
                       : editingId
-                        ? 'Enregistrer'
-                        : 'Créer'}
+                      ? 'Enregistrer'
+                      : 'Créer'}
                   </button>
                 )}
               </div>

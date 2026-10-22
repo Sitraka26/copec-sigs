@@ -1,5 +1,4 @@
-// Schéma de base de données - Système de Gestion Scolaire COPEC
-// À ajuster une fois les réponses de l'école obtenues (voir docs/questions-ecole.md)
+// Schéma de base de données - Système de Gestion Scolaire COPEC (Optimisé & Corrigé)
 
 generator client {
   provider = "prisma-client-js"
@@ -9,6 +8,10 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+// ==========================================
+// ENUMS
+// ==========================================
 
 enum Role {
   ADMIN
@@ -26,6 +29,11 @@ enum Cycle {
   LYCEE
 }
 
+enum Sexe {
+  MASCULIN
+  FEMININ
+}
+
 enum StatutInscription {
   ACTIVE
   TRANSFEREE
@@ -37,12 +45,14 @@ enum StatutPresence {
   PRESENT
   ABSENT
   RETARD
+  DISPENSE
 }
 
 enum StatutPaiement {
   PAYE
   PARTIEL
   EN_ATTENTE
+  ANNULE
 }
 
 enum StatutReclamationNote {
@@ -67,6 +77,45 @@ enum TypeDiscipline {
   AUTRE
 }
 
+enum TypeFrais {
+  DROIT
+  ADIDY
+  ECOLAGE
+  FRAIS_EXAMEN
+  AUTRE
+}
+
+// ==========================================
+// MODÈLES CORE & UTILISATEURS
+// ==========================================
+
+model Etablissement {
+  id        String   @id @default(uuid())
+  nom       String   // ex: "COPEC Isaha", "COPEC Mangabe"
+  adresse   String?
+  telephone String?
+  email     String?
+  logoUrl   String?
+  createdAt DateTime @default(now())
+
+  utilisateurs            Utilisateur[]
+  anneesScolaires         AnneeScolaire[]
+  eleves                  Eleve[]
+  classes                 Classe[]
+  matieres                Matiere[]
+  messages                Message[]
+  planificationsScolaires PlanificationScolaire[]
+  evenementsScolaires     EvenementScolaire[]
+  reclamationsNote        ReclamationNote[]
+  auditLogs               AuditLog[]
+  disciplines             Discipline[]
+  certificatsDemandes     CertificatDemande[]
+  emploisDuTemps          EmploiDuTemps[]
+  parametresSalaire       ParametreSalaire[]
+  presencesEnseignant     PresenceEnseignant[]
+  indisponibilites    IndisponibiliteEnseignant[]
+}
+
 model Utilisateur {
   id              String   @id @default(uuid())
   etablissementId String
@@ -78,13 +127,13 @@ model Utilisateur {
   actif           Boolean  @default(true)
   createdAt       DateTime @default(now())
 
-  etablissement       Etablissement       @relation(fields: [etablissementId], references: [id])
+  etablissement       Etablissement       @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
+  enseignant          Enseignant?
   messagesEnvoyes     Message[]           @relation("MessagesEnvoyes")
   messagesRecus       Message[]           @relation("MessagesRecus")
-  enseignant          Enseignant?
   reclamationsNote    ReclamationNote[]   @relation("ReclamationsAuteur")
   auditLogs           AuditLog[]
-  disciplines         Discipline[]
+  disciplines         Discipline[]        @relation("DisciplineAuteur")
   certificatsDemandes CertificatDemande[] @relation("CertificatsDemandes")
   certificatsValides  CertificatDemande[] @relation("CertificatsValides")
 }
@@ -92,12 +141,12 @@ model Utilisateur {
 model AnneeScolaire {
   id              String   @id @default(uuid())
   etablissementId String
-  libelle         String // ex: "2026-2027"
+  libelle         String   // ex: "2026-2027"
   dateDebut       DateTime
   dateFin         DateTime
   active          Boolean  @default(false)
 
-  etablissement           Etablissement           @relation(fields: [etablissementId], references: [id])
+  etablissement           Etablissement           @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
   inscriptions            Inscription[]
   classes                 Classe[]
   bulletins               Bulletin[]
@@ -105,16 +154,21 @@ model AnneeScolaire {
   paiements               Paiement[]
   planificationsScolaires PlanificationScolaire[]
   evenementsScolaires     EvenementScolaire[]
+  emploisDuTemps          EmploiDuTemps[]
 
   @@unique([etablissementId, libelle])
 }
 
+// ==========================================
+// ACADÉMIQUE & STRUCTURE
+// ==========================================
+
 model Niveau {
   id      String  @id @default(uuid())
-  libelle String // ex: "6ème", "CP", "Terminale"
+  libelle String  // ex: "6ème", "CP", "Terminale"
   cycle   Cycle
-  filiere String? // ex: "A1", "A2", "D" — uniquement rempli pour les niveaux qui se divisent en séries (ex: Terminale)
-  ordre   Int // pour trier (préscolaire=1 ... terminale=13)
+  filiere String? // ex: "A1", "A2", "D", "C"
+  ordre   Int     // pour le tri (1 à 13)
 
   classes      Classe[]
   baremesFrais BaremeFrais[]
@@ -122,16 +176,17 @@ model Niveau {
 }
 
 model Classe {
-  id                  String  @id @default(uuid())
-  etablissementId     String
-  nom                 String // ex: "6ème A"
-  niveauId            String
-  anneeScolaireId     String
-  enseignantPrincipal String?
+  id                    String   @id @default(uuid())
+  etablissementId       String
+  nom                   String   // ex: "6ème A"
+  niveauId              String
+  anneeScolaireId       String
+  enseignantPrincipalId String?
 
-  etablissement           Etablissement           @relation(fields: [etablissementId], references: [id])
+  etablissement           Etablissement           @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
   niveau                  Niveau                  @relation(fields: [niveauId], references: [id])
-  anneeScolaire           AnneeScolaire           @relation(fields: [anneeScolaireId], references: [id])
+  anneeScolaire           AnneeScolaire           @relation(fields: [anneeScolaireId], references: [id], onDelete: Cascade)
+  enseignantPrincipal     Enseignant?             @relation("EnseignantPrincipal", fields: [enseignantPrincipalId], references: [id])
   inscriptions            Inscription[]
   emploiDuTemps           EmploiDuTemps[]
   planificationsScolaires PlanificationScolaire[]
@@ -146,25 +201,31 @@ model Eleve {
   nom               String
   prenom            String
   dateNaissance     DateTime
-  sexe              String
+  sexe              Sexe
   adresse           String?
   photo             String?
   contactUrgenceNom String?
   contactUrgenceTel String?
   informationsSante String?
-    // Famille
-  pereNom          String?
-  pereProfession   String?
-  mereNom          String?
-  mereProfession   String?
 
-  // Documents (chemins relatifs des fichiers uploadés)
-  photoIdentiteUrl       String?   // obligatoire à la création
-  extraitNaissanceUrl    String?   // obligatoire à la création
-  carteBaptemeUrl        String?   // facultatif
-  createdAt         DateTime @default(now())
+  // Famille
+  pereNom        String?
+  pereProfession String?
+  mereNom        String?
+  mereProfession String?
 
-  etablissement       Etablissement       @relation(fields: [etablissementId], references: [id])
+  // Origine / Transfert
+  vientAutreEcole     Boolean @default(false)
+  bulletinOrigineUrl  String?
+  cycleVise           Cycle?
+
+  // Documents
+  photoIdentiteUrl    String?
+  extraitNaissanceUrl String?
+  carteBaptemeUrl     String?
+  createdAt           DateTime @default(now())
+
+  etablissement       Etablissement       @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
   inscriptions        Inscription[]
   notes               Note[]
   presences           Presence[]
@@ -183,62 +244,138 @@ model Inscription {
   dateInscription DateTime          @default(now())
   statut          StatutInscription @default(ACTIVE)
 
-  eleve         Eleve         @relation(fields: [eleveId], references: [id])
+  eleve         Eleve         @relation(fields: [eleveId], references: [id], onDelete: Cascade)
   classe        Classe        @relation(fields: [classeId], references: [id])
   anneeScolaire AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+  paiements     Paiement[]
 
   @@unique([eleveId, anneeScolaireId])
 }
 
 model Matiere {
-  id              String @id @default(uuid())
+  id              String  @id @default(uuid())
   etablissementId String
   nom             String
-  coefficient     Float  @default(1)
+  coefficient     Float   @default(1)
+  domaine         String? // "SCIENTIFIQUE" | "LITTERAIRE" | null
 
-  etablissement           Etablissement           @relation(fields: [etablissementId], references: [id])
+  etablissement           Etablissement           @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
   notes                   Note[]
   emploiDuTemps           EmploiDuTemps[]
   enseignants             EnseignantMatiere[]
   programmes              NiveauMatiere[]
   planificationsScolaires PlanificationScolaire[]
   reclamationsNote        ReclamationNote[]
+  presences               Presence[]
 
   @@unique([etablissementId, nom])
 }
 
 model Enseignant {
-  id            String  @id @default(uuid())
-  utilisateurId String  @unique
-  telephone     String?
+  id                  String   @id @default(uuid())
+  utilisateurId       String   @unique
+  telephone           String?
+  salaireFixeOverride Float?   // optionnel : fixe perso (sinon paramètre cycle)
 
-  utilisateur   Utilisateur         @relation(fields: [utilisateurId], references: [id])
-  matieres      EnseignantMatiere[]
-  emploiDuTemps EmploiDuTemps[]
+  utilisateur     Utilisateur          @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+  matieres        EnseignantMatiere[]
+  emploiDuTemps   EmploiDuTemps[]
+  classesEnCharge Classe[]             @relation("EnseignantPrincipal")
+  presences       PresenceEnseignant[]
+  cyclePrincipal  Cycle?   // PRESCOLAIRE | PRIMAIRE | COLLEGE | LYCEE
+  indisponibilites    IndisponibiliteEnseignant[]
 }
 
 model EnseignantMatiere {
   enseignantId String
   matiereId    String
 
-  enseignant Enseignant @relation(fields: [enseignantId], references: [id])
-  matiere    Matiere    @relation(fields: [matiereId], references: [id])
+  enseignant Enseignant @relation(fields: [enseignantId], references: [id], onDelete: Cascade)
+  matiere    Matiere    @relation(fields: [matiereId], references: [id], onDelete: Cascade)
 
   @@id([enseignantId, matiereId])
 }
+
+model NiveauMatiere {
+  id          String @id @default(uuid())
+  niveauId    String
+  matiereId   String
+  coefficient Float
+
+  niveau  Niveau  @relation(fields: [niveauId], references: [id], onDelete: Cascade)
+  matiere Matiere @relation(fields: [matiereId], references: [id], onDelete: Cascade)
+
+  @@unique([niveauId, matiereId])
+}
+
+// ==========================================
+// SALAIRES & PRÉSENCES ENSEIGNANTS
+// ==========================================
+
+model ParametreSalaire {
+  id                    String   @id @default(uuid())
+  etablissementId       String
+  // Présco / primaire : montant mensuel fixe
+  salaireFixePresco     Float    @default(0)
+  salaireFixePrimaire   Float    @default(0)
+  // Secondaire : taux horaire (Ar / heure)
+  tauxHoraireSecondaire Float    @default(0)
+  // Plafond heures / semaine secondaire
+  maxHeuresSemaine      Int      @default(6)
+  updatedAt             DateTime @updatedAt
+
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
+}
+
+model PresenceEnseignant {
+  id              String   @id @default(uuid())
+  etablissementId String
+  enseignantId    String
+  date            DateTime
+  present         Boolean  @default(true)
+  heuresPrevues   Float    @default(0) // selon emploi du temps du jour
+  heuresFaites    Float    @default(0) // saisies / calculées
+  motifAbsence    String?
+  createdAt       DateTime @default(now())
+
+  enseignant    Enseignant    @relation(fields: [enseignantId], references: [id], onDelete: Cascade)
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
+
+  @@unique([enseignantId, date])
+}
+
+// ==========================================
+// ÉVALUATION & SUIVI ACADÉMIQUE
+// ==========================================
 
 model Note {
   id        String   @id @default(uuid())
   eleveId   String
   matiereId String
-  periode   Int // 1 à 5 (bimestres, confirmé par le bulletin réel de l'école)
+  periode   Int      // 1 à 5 (bimestres)
   valeur    Float
   date      DateTime @default(now())
 
-  eleve   Eleve   @relation(fields: [eleveId], references: [id])
+  eleve   Eleve   @relation(fields: [eleveId], references: [id], onDelete: Cascade)
   matiere Matiere @relation(fields: [matiereId], references: [id])
 
   @@unique([eleveId, matiereId, periode])
+}
+
+model Bulletin {
+  id              String   @id @default(uuid())
+  eleveId         String
+  anneeScolaireId String
+  periode         Int      // 1 à 5
+  moyenneGenerale Float?
+  rang            Int?
+  appreciation    String?
+  genereLe        DateTime @default(now())
+
+  eleve         Eleve         @relation(fields: [eleveId], references: [id], onDelete: Cascade)
+  anneeScolaire AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+
+  @@unique([eleveId, anneeScolaireId, periode])
 }
 
 model ReclamationNote {
@@ -254,40 +391,43 @@ model ReclamationNote {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
-  etablissement Etablissement @relation(fields: [etablissementId], references: [id])
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
   auteur        Utilisateur   @relation("ReclamationsAuteur", fields: [auteurId], references: [id])
-  eleve         Eleve         @relation(fields: [eleveId], references: [id])
+  eleve         Eleve         @relation(fields: [eleveId], references: [id], onDelete: Cascade)
   matiere       Matiere       @relation(fields: [matiereId], references: [id])
 
   @@index([etablissementId, statut])
   @@index([eleveId, matiereId, periode])
 }
 
-model Bulletin {
-  id              String   @id @default(uuid())
-  eleveId         String
-  anneeScolaireId String
-  periode         Int // 1 à 5
-  moyenneGenerale Float?
-  rang            Int?
-  appreciation    String?
-  genereLe        DateTime @default(now())
+model Presence {
+  id        String         @id @default(uuid())
+  eleveId   String
+  matiereId String?        // Optionnel : suivi de présence par cours
+  date      DateTime
+  statut    StatutPresence
+  justifie  Boolean        @default(false)
+  motif     String?
 
-  eleve         Eleve         @relation(fields: [eleveId], references: [id])
-  anneeScolaire AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+  eleve   Eleve    @relation(fields: [eleveId], references: [id], onDelete: Cascade)
+  matiere Matiere? @relation(fields: [matiereId], references: [id])
 
-  @@unique([eleveId, anneeScolaireId, periode])
+  @@index([eleveId, date])
+  minutesRetard  Int?     // null si PRESENT/ABSENT ; > 0 si RETARD
 }
 
-/// Barème des frais par niveau et par année scolaire.
-/// Édité par l'Économe/Admin — jamais codé en dur, car les montants changent chaque année.
+// ==========================================
+// COMPTABILITÉ & FRAIS
+// ==========================================
+
 model BaremeFrais {
   id              String @id @default(uuid())
   niveauId        String
   anneeScolaireId String
-  droit           Float // fixe historiquement (70 000 Ar en 2026-2027) mais reste éditable
-  ecolage         Float // varie selon le niveau
-  fraisExamen     Float  @default(0) // 20 000 Ar uniquement pour les classes d'examen (3e, Terminale), 0 sinon
+  droit           Float  // Frais d'inscription
+  adidy           Float  @default(0)
+  ecolage         Float  // Écolage annuel
+  fraisExamen     Float  @default(0) // Uniquement classes d'examen (3ème, Terminale)
 
   niveau        Niveau        @relation(fields: [niveauId], references: [id])
   anneeScolaire AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
@@ -295,21 +435,47 @@ model BaremeFrais {
   @@unique([niveauId, anneeScolaireId])
 }
 
-/// Coefficient d'une matière POUR UN NIVEAU DONNÉ (ex: SVT coef. 2 en 6ème,
-/// mais coef. 4 en Terminale D). Remplace le coefficient unique et global
-/// qui était une simplification excessive au démarrage du projet.
-/// S'il n'existe pas d'entrée ici pour un couple (niveau, matière), le
-/// coefficient par défaut de la Matiere est utilisé en repli.
-model NiveauMatiere {
-  id          String @id @default(uuid())
-  niveauId    String
-  matiereId   String
-  coefficient Float
+model Paiement {
+  id              String         @id @default(uuid())
+  eleveId         String
+  inscriptionId   String?
+  anneeScolaireId String
+  montant         Float
+  typeFrais       TypeFrais
+  datePaiement    DateTime       @default(now())
+  moyenPaiement   String?        // ex: "Espèces", "MVola", "Chèque"
+  numeroRecu      String?        @unique
+  statut          StatutPaiement @default(PAYE)
 
-  niveau  Niveau  @relation(fields: [niveauId], references: [id])
-  matiere Matiere @relation(fields: [matiereId], references: [id])
+  eleve         Eleve         @relation(fields: [eleveId], references: [id], onDelete: Cascade)
+  inscription   Inscription?  @relation(fields: [inscriptionId], references: [id])
+  anneeScolaire AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
 
-  @@unique([niveauId, matiereId])
+  @@index([eleveId, anneeScolaireId])
+}
+
+// ==========================================
+// EMPLOI DU TEMPS & PLANIFICATION
+// ==========================================
+
+model EmploiDuTemps {
+  id              String @id @default(uuid())
+  etablissementId String
+  anneeScolaireId String
+  classeId        String
+  matiereId       String
+  enseignantId    String
+  jour            Int    // 1=lundi ... 6=samedi
+  heureDebut      String // Format "HH:mm"
+  heureFin        String // Format "HH:mm"
+
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
+  anneeScolaire AnneeScolaire @relation(fields: [anneeScolaireId], references: [id], onDelete: Cascade)
+  classe        Classe        @relation(fields: [classeId], references: [id])
+  matiere       Matiere       @relation(fields: [matiereId], references: [id])
+  enseignant    Enseignant    @relation(fields: [enseignantId], references: [id])
+
+  @@index([classeId, jour])
 }
 
 model PlanificationScolaire {
@@ -328,7 +494,7 @@ model PlanificationScolaire {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  etablissement Etablissement @relation(fields: [etablissementId], references: [id])
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
   classe        Classe        @relation(fields: [classeId], references: [id])
   matiere       Matiere       @relation(fields: [matiereId], references: [id])
   anneeScolaire AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
@@ -348,18 +514,19 @@ model EvenementScolaire {
   cible           String    @default("TOUS")
   createdAt       DateTime  @default(now())
 
-  etablissement Etablissement @relation(fields: [etablissementId], references: [id])
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
   anneeScolaire AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
 
   @@index([etablissementId, dateDebut])
 }
 
-/// Messages internes entre le personnel (ex: la direction informe les
-/// enseignants). Peut cibler UNE personne précise (destinataireId) OU
-/// tout un poste d'un coup (destinataireRole, ex: tous les enseignants).
+// ==========================================
+// COMMUNICATION, DISCIPLINE & LOGS
+// ==========================================
+
 model Message {
   id                  String   @id @default(uuid())
-  etablissementId      String
+  etablissementId     String
   expediteurId        String
   destinataireId      String?
   destinataireRole    Role?
@@ -367,97 +534,24 @@ model Message {
   dateEnvoi           DateTime @default(now())
   luParUtilisateurIds String[] @default([])
 
-  etablissement Etablissement @relation(fields: [etablissementId], references: [id])
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
   expediteur    Utilisateur   @relation("MessagesEnvoyes", fields: [expediteurId], references: [id])
   destinataire  Utilisateur?  @relation("MessagesRecus", fields: [destinataireId], references: [id])
-}
-
-model Presence {
-  id       String         @id @default(uuid())
-  eleveId  String
-  date     DateTime
-  statut   StatutPresence
-  justifie Boolean        @default(false)
-
-  eleve Eleve @relation(fields: [eleveId], references: [id])
-
-  @@unique([eleveId, date])
-}
-
-enum TypeFrais {
-  DROIT // frais d'inscription/droit, payé une fois à la rentrée
-  ECOLAGE // écolage annuel, payé en bloc (confirmé: pas de paiement par tranche chez COPEC)
-  FRAIS_EXAMEN // "feuille de copie examen"
-  AUTRE
-}
-
-model Paiement {
-  id              String         @id @default(uuid())
-  eleveId         String
-  anneeScolaireId String
-  montant         Float
-  typeFrais       TypeFrais
-  datePaiement    DateTime       @default(now())
-  moyenPaiement   String?
-  numeroRecu      String?        @unique
-  statut          StatutPaiement @default(PAYE)
-
-  eleve         Eleve         @relation(fields: [eleveId], references: [id])
-  anneeScolaire AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
-}
-
-/// Un site COPEC (ex: Isaha, Mangabe). Chaque déploiement local
-/// n'aura normalement qu'UNE seule ligne ici (son propre établissement),
-/// mais le modèle permet de centraliser plusieurs sites plus tard
-/// (quand internet sera disponible) sans changer le schéma.
-model Etablissement {
-  id                      String                  @id @default(uuid())
-  nom                     String // ex: "COPEC Isaha", "COPEC Mangabe"
-  adresse                 String?
-  telephone               String?
-  email                   String?
-  logoUrl                 String?
-  utilisateurs            Utilisateur[]
-  anneesScolaires         AnneeScolaire[]
-  eleves                  Eleve[]
-  classes                 Classe[]
-  matieres                Matiere[]
-  messages                Message[]
-  planificationsScolaires PlanificationScolaire[]
-  evenementsScolaires     EvenementScolaire[]
-  reclamationsNote        ReclamationNote[]
-  auditLogs               AuditLog[]
-  disciplines             Discipline[]
-  certificatsDemandes     CertificatDemande[]
-}
-
-model EmploiDuTemps {
-  id           String @id @default(uuid())
-  classeId     String
-  matiereId    String
-  enseignantId String
-  jour         Int // 1=lundi ... 6=samedi
-  heureDebut   String // format "HH:mm"
-  heureFin     String
-
-  classe     Classe     @relation(fields: [classeId], references: [id])
-  matiere    Matiere    @relation(fields: [matiereId], references: [id])
-  enseignant Enseignant @relation(fields: [enseignantId], references: [id])
 }
 
 model AuditLog {
   id              String   @id @default(uuid())
   etablissementId String
   utilisateurId   String?
-  action          String // ex: "CREATE_ELEVE", "UPDATE_NOTE", "LOGIN", "DELETE_PAIEMENT"
-  entite          String? // ex: "Eleve", "Note", "Paiement"
+  action          String   // ex: "CREATE_ELEVE", "UPDATE_NOTE", "LOGIN"
+  entite          String?  // ex: "Eleve", "Note", "Paiement"
   entiteId        String?
-  details         String? // JSON ou texte libre
+  details         String?  // JSON ou texte
   ip              String?
   createdAt       DateTime @default(now())
 
   utilisateur   Utilisateur?  @relation(fields: [utilisateurId], references: [id])
-  etablissement Etablissement @relation(fields: [etablissementId], references: [id])
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
 }
 
 model Discipline {
@@ -469,15 +563,31 @@ model Discipline {
   motif           String
   description     String?
   dateIncident    DateTime       @default(now())
-  points          Int            @default(0) // négatif = sanction, positif = félicitation
+  points          Int            @default(0)
   createdAt       DateTime       @default(now())
 
-  etablissement Etablissement @relation(fields: [etablissementId], references: [id])
-  eleve         Eleve         @relation(fields: [eleveId], references: [id])
-  auteur        Utilisateur   @relation(fields: [auteurId], references: [id])
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
+  eleve         Eleve         @relation(fields: [eleveId], references: [id], onDelete: Cascade)
+  auteur        Utilisateur   @relation("DisciplineAuteur", fields: [auteurId], references: [id])
 
   @@index([eleveId, dateIncident])
   @@index([etablissementId])
+}
+
+model IndisponibiliteEnseignant {
+  id              String   @id @default(uuid())
+  etablissementId String
+  enseignantId    String
+  jour            Int      // 1=lundi ... 6=samedi
+  heureDebut      String   // "HH:mm"
+  heureFin        String
+  motif           String?  // "Autre école", etc.
+  createdAt       DateTime @default(now())
+
+  enseignant    Enseignant    @relation(fields: [enseignantId], references: [id], onDelete: Cascade)
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
+
+  @@index([enseignantId, jour])
 }
 
 model CertificatDemande {
@@ -485,15 +595,15 @@ model CertificatDemande {
   etablissementId String
   eleveId         String
   demandeurId     String
-  type            String // SCOLARITE | ASSIDUITE | REUSSITE
+  type            String           // SCOLARITE | ASSIDUITE | REUSSITE
   statut          StatutCertificat @default(EN_ATTENTE)
   motifRejet      String?
   valideParId     String?
   createdAt       DateTime         @default(now())
   valideLe        DateTime?
 
-  etablissement Etablissement @relation(fields: [etablissementId], references: [id])
-  eleve         Eleve         @relation(fields: [eleveId], references: [id])
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id], onDelete: Cascade)
+  eleve         Eleve         @relation(fields: [eleveId], references: [id], onDelete: Cascade)
   demandeur     Utilisateur   @relation("CertificatsDemandes", fields: [demandeurId], references: [id])
   validePar     Utilisateur?  @relation("CertificatsValides", fields: [valideParId], references: [id])
 

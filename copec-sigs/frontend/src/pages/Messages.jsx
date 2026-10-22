@@ -10,9 +10,36 @@ const LIBELLES_ROLE = {
   SURVEILLANT: 'Surveillants',
 };
 
+const LIBELLES_ROLE_PERSONNE = {
+  ADMIN: 'Administrateur',
+  DIRECTEUR: 'Directeur',
+  SECRETAIRE: 'Secrétaire',
+  ECONOME: 'Économe',
+  ENSEIGNANT: 'Enseignant',
+  SURVEILLANT: 'Surveillant',
+};
+
+function libelleRole(role) {
+  return LIBELLES_ROLE_PERSONNE[role] || role || '—';
+}
+
+function nomComplet(user) {
+  if (!user) return 'Inconnu';
+  return `${user.prenom || ''} ${user.nom || ''}`.trim() || user.email || 'Inconnu';
+}
+
+const ROLES_ENVOI = [
+  'ADMIN',
+  'DIRECTEUR',
+  'SECRETAIRE',
+  'ECONOME',
+  'ENSEIGNANT',
+  'SURVEILLANT',
+];
+
 export default function Messages() {
   const utilisateur = JSON.parse(localStorage.getItem('utilisateur') || 'null');
-  const peutEnvoyer = utilisateur?.role === 'ADMIN' || utilisateur?.role === 'DIRECTEUR';
+  const peutEnvoyer = ROLES_ENVOI.includes(utilisateur?.role);
 
   const [messagesRecus, setMessagesRecus] = useState([]);
   const [messagesEnvoyes, setMessagesEnvoyes] = useState([]);
@@ -33,9 +60,6 @@ export default function Messages() {
   async function chargerMessagesRecus() {
     const { data } = await api.get('/messages');
     setMessagesRecus(data);
-    if (!selection && data.length > 0) {
-      setSelection(data[0].id);
-    }
   }
 
   async function chargerMessagesEnvoyes() {
@@ -48,7 +72,9 @@ export default function Messages() {
     const promesses = [chargerMessagesRecus()];
     if (peutEnvoyer) {
       promesses.push(chargerMessagesEnvoyes());
-      promesses.push(api.get('/enseignants').then(({ data }) => setEnseignants(data)));
+      promesses.push(
+        api.get('/enseignants').then(({ data }) => setEnseignants(data)).catch(() => {})
+      );
     }
     Promise.all(promesses)
       .catch((err) => setErreur(err.response?.data?.error || 'Erreur de chargement'))
@@ -107,7 +133,9 @@ export default function Messages() {
     setErreur('');
     try {
       const corps =
-        typeCible === 'role' ? { contenu, destinataireRole } : { contenu, destinataireId };
+        typeCible === 'role'
+          ? { contenu, destinataireRole }
+          : { contenu, destinataireId };
       await api.post('/messages', corps);
       setModaleOuverte(false);
       await chargerMessagesEnvoyes();
@@ -129,7 +157,6 @@ export default function Messages() {
 
   return (
     <div className="p-4 sm:p-8 min-h-full">
-      {/* En-tête */}
       <div className="flex flex-wrap justify-between items-start gap-4 mb-6">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-600 mb-1">
@@ -156,7 +183,6 @@ export default function Messages() {
 
       <div className="rounded-2xl border border-slate-100 bg-white shadow-sm overflow-hidden">
         <div className="flex min-h-[70vh] flex-col md:flex-row">
-          {/* Liste */}
           <aside className="w-full border-b border-slate-100 bg-slate-50/80 md:w-80 md:border-b-0 md:border-r">
             <div className="border-b border-slate-100 p-3">
               <div className="flex gap-1 rounded-xl bg-white p-1.5 shadow-sm border border-slate-100">
@@ -238,8 +264,12 @@ export default function Messages() {
                     const estSelectionne = messageSelectionne?.id === message.id;
                     const titre =
                       ongletActif === 'recus'
-                        ? `${message.expediteur?.nom} ${message.expediteur?.prenom}`
+                        ? nomComplet(message.expediteur)
                         : message.cible;
+                    const roleExp =
+                      ongletActif === 'recus'
+                        ? libelleRole(message.expediteur?.role)
+                        : null;
 
                     return (
                       <button
@@ -259,10 +289,15 @@ export default function Messages() {
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="truncate text-sm font-semibold text-slate-800">
                                 {titre}
                               </span>
+                              {roleExp && (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                                  {roleExp}
+                                </span>
+                              )}
                               {ongletActif === 'recus' && !message.lu && (
                                 <span className="inline-flex h-2 w-2 rounded-full bg-blue-500 shrink-0" />
                               )}
@@ -286,7 +321,6 @@ export default function Messages() {
             </div>
           </aside>
 
-          {/* Lecture */}
           <section className="flex min-h-[50vh] flex-1 flex-col bg-white">
             {messageSelectionne ? (
               <>
@@ -295,15 +329,23 @@ export default function Messages() {
                     <div>
                       <p className="text-sm font-semibold text-slate-900">
                         {ongletActif === 'recus'
-                          ? `${messageSelectionne.expediteur?.nom} ${messageSelectionne.expediteur?.prenom}`
+                          ? nomComplet(messageSelectionne.expediteur)
                           : messageSelectionne.cible}
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {ongletActif === 'recus'
-                          ? messageSelectionne.cibleTout
-                            ? 'Message ciblé à tout le poste'
-                            : 'Message personnel'
-                          : `${messageSelectionne.nombreLectures ?? 0} lecture(s)`}
+                        {ongletActif === 'recus' ? (
+                          <>
+                            <span className="font-medium text-slate-600">
+                              {libelleRole(messageSelectionne.expediteur?.role)}
+                            </span>
+                            {' · '}
+                            {messageSelectionne.cibleTout
+                              ? 'Message ciblé à un poste'
+                              : 'Message personnel'}
+                          </>
+                        ) : (
+                          `${messageSelectionne.nombreLectures ?? 0} lecture(s)`
+                        )}
                       </p>
                     </div>
                     <span
@@ -326,6 +368,12 @@ export default function Messages() {
                         : 'ml-auto bg-blue-50 text-slate-800 border border-blue-100'
                     }`}
                   >
+                    {ongletActif === 'recus' && (
+                      <p className="text-[11px] mb-2 text-slate-300">
+                        De {nomComplet(messageSelectionne.expediteur)} ·{' '}
+                        {libelleRole(messageSelectionne.expediteur?.role)}
+                      </p>
+                    )}
                     <p className="whitespace-pre-wrap text-sm leading-relaxed">
                       {messageSelectionne.contenu}
                     </p>
@@ -357,7 +405,6 @@ export default function Messages() {
         </div>
       </div>
 
-      {/* Modale */}
       {modaleOuverte && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
@@ -389,7 +436,6 @@ export default function Messages() {
                       type="radio"
                       checked={typeCible === 'role'}
                       onChange={() => setTypeCible('role')}
-                      className="text-blue-600"
                     />
                     Poste
                   </label>
@@ -398,7 +444,6 @@ export default function Messages() {
                       type="radio"
                       checked={typeCible === 'personne'}
                       onChange={() => setTypeCible('personne')}
-                      className="text-blue-600"
                     />
                     Personne
                   </label>
@@ -406,7 +451,7 @@ export default function Messages() {
 
                 {typeCible === 'role' ? (
                   <select
-                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                     value={destinataireRole}
                     onChange={(e) => setDestinataireRole(e.target.value)}
                   >
@@ -418,7 +463,7 @@ export default function Messages() {
                   </select>
                 ) : (
                   <select
-                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                     value={destinataireId}
                     onChange={(e) => setDestinataireId(e.target.value)}
                     required
@@ -439,7 +484,7 @@ export default function Messages() {
                 </label>
                 <textarea
                   rows={4}
-                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                   value={contenu}
                   onChange={(e) => setContenu(e.target.value)}
                   required

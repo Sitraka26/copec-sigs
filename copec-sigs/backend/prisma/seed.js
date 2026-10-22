@@ -18,7 +18,7 @@ async function main() {
   // 1. Établissement
   const etablissement = await prisma.etablissement.upsert({
     where: { id: 'etab-principal' },
-    update: {},
+    update: { nom: NOM_ETABLISSEMENT },
     create: {
       id: 'etab-principal',
       nom: NOM_ETABLISSEMENT,
@@ -43,7 +43,7 @@ async function main() {
   // 3. Année scolaire active
   const anneeScolaire = await prisma.anneeScolaire.upsert({
     where: { etablissementId_libelle: { etablissementId: etablissement.id, libelle: '2026-2027' } },
-    update: {},
+    update: { active: true },
     create: {
       etablissementId: etablissement.id,
       libelle: '2026-2027',
@@ -75,7 +75,19 @@ async function main() {
   const niveaux = {};
   for (const def of niveauxDef) {
     const key = def.filiere ? `${def.libelle}-${def.filiere}` : def.libelle;
-    const niveau = await prisma.niveau.create({ data: def });
+    
+    // Recherche si le niveau existe déjà pour éviter des erreurs de contraintes
+    let niveau = await prisma.niveau.findFirst({
+      where: {
+        libelle: def.libelle,
+        filiere: def.filiere || null,
+      },
+    });
+
+    if (!niveau) {
+      niveau = await prisma.niveau.create({ data: def });
+    }
+
     niveaux[key] = niveau;
   }
 
@@ -93,18 +105,25 @@ async function main() {
   ];
 
   for (const b of bareme) {
-    await prisma.baremeFrais.create({
-      data: {
+    const existingBareme = await prisma.baremeFrais.findFirst({
+      where: {
         niveauId: niveaux[b.key].id,
         anneeScolaireId: anneeScolaire.id,
-        droit: b.droit,
-        ecolage: b.ecolage,
-        fraisExamen: b.fraisExamen,
       },
     });
+
+    if (!existingBareme) {
+      await prisma.baremeFrais.create({
+        data: {
+          niveauId: niveaux[b.key].id,
+          anneeScolaireId: anneeScolaire.id,
+          droit: b.droit,
+          ecolage: b.ecolage,
+          fraisExamen: b.fraisExamen,
+        },
+      });
+    }
   }
-  // ⚠️ Préscolaire et Primaire (CP à CM2) : montants non confirmés avec l'école,
-  // pas de BaremeFrais créé pour l'instant — à ajouter une fois obtenus.
 
   // 6. Matières observées sur le bulletin réel (exemple filière D)
   const matieres = [
@@ -117,10 +136,20 @@ async function main() {
     { nom: 'SVT', coefficient: 3 },
     { nom: 'EPS', coefficient: 1 },
   ];
+
   for (const m of matieres) {
-    await prisma.matiere.create({
-      data: { ...m, etablissementId: etablissement.id },
+    const existingMatiere = await prisma.matiere.findFirst({
+      where: {
+        nom: m.nom,
+        etablissementId: etablissement.id,
+      },
     });
+
+    if (!existingMatiere) {
+      await prisma.matiere.create({
+        data: { ...m, etablissementId: etablissement.id },
+      });
+    }
   }
 
   console.log('✅ Seed terminé.');

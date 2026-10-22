@@ -10,6 +10,47 @@ function periodeValide(periode) {
   return Number.isInteger(p) && p >= PERIODE_MIN && p <= PERIODE_MAX;
 }
 
+/** GET /api/notes/matieres-niveau/:niveauId — matières du programme uniquement */
+async function listerMatieresParNiveau(req, res, next) {
+  try {
+    const { niveauId } = req.params;
+
+    const niveau = await prisma.niveau.findFirst({ where: { id: niveauId } });
+    if (!niveau) {
+      return res.status(404).json({ error: 'Niveau introuvable' });
+    }
+
+    const lignes = await prisma.niveauMatiere.findMany({
+      where: { niveauId },
+      include: {
+        matiere: {
+          select: {
+            id: true,
+            nom: true,
+            coefficient: true,
+            domaine: true,
+            etablissementId: true,
+          },
+        },
+      },
+      orderBy: { matiere: { nom: 'asc' } },
+    });
+
+    const matieres = lignes
+      .filter((l) => l.matiere && l.matiere.etablissementId === req.user.etablissementId)
+      .map((l) => ({
+        id: l.matiere.id,
+        nom: l.matiere.nom,
+        coefficient: l.coefficient,
+        domaine: l.matiere.domaine,
+      }));
+
+    res.json(matieres);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listerPourSaisie(req, res, next) {
   try {
     const { classeId, matiereId, periode } = req.query;
@@ -18,7 +59,9 @@ async function listerPourSaisie(req, res, next) {
       return res.status(400).json({ error: 'classeId, matiereId et periode sont requis' });
     }
     if (!periodeValide(periode)) {
-      return res.status(400).json({ error: `periode doit être entre ${PERIODE_MIN} et ${PERIODE_MAX}` });
+      return res.status(400).json({
+        error: `periode doit être entre ${PERIODE_MIN} et ${PERIODE_MAX}`,
+      });
     }
 
     const classe = await prisma.classe.findFirst({
@@ -32,12 +75,21 @@ async function listerPourSaisie(req, res, next) {
     });
     if (!matiere) return res.status(404).json({ error: 'Matière introuvable' });
 
-    const autorise = await enseignantEnseigneCetteMatiereDansCetteClasse(req, classeId, matiereId);
+    const autorise = await enseignantEnseigneCetteMatiereDansCetteClasse(
+      req,
+      classeId,
+      matiereId
+    );
     if (!autorise) {
-      return res.status(403).json({ error: "Vous n'êtes pas assigné à cette matière dans cette classe" });
+      return res.status(403).json({
+        error: "Vous n'êtes pas assigné à cette matière dans cette classe",
+      });
     }
 
-    const coefficients = await obtenirCoefficientsPourNiveau(classe.niveauId, req.user.etablissementId);
+    const coefficients = await obtenirCoefficientsPourNiveau(
+      classe.niveauId,
+      req.user.etablissementId
+    );
     const coefficientPourCeNiveau = coefficients[matiereId] ?? matiere.coefficient;
 
     const inscriptions = await prisma.inscription.findMany({
@@ -61,7 +113,12 @@ async function listerPourSaisie(req, res, next) {
       noteId: insc.eleve.notes[0]?.id ?? null,
     }));
 
-    res.json({ matiere, periode: Number(periode), coefficient: coefficientPourCeNiveau, eleves: grille });
+    res.json({
+      matiere,
+      periode: Number(periode),
+      coefficient: coefficientPourCeNiveau,
+      eleves: grille,
+    });
   } catch (err) {
     next(err);
   }
@@ -72,10 +129,14 @@ async function enregistrerLot(req, res, next) {
     const { classeId, matiereId, periode, notes } = req.body;
 
     if (!classeId || !matiereId || !periode || !Array.isArray(notes)) {
-      return res.status(400).json({ error: 'classeId, matiereId, periode et notes[] sont requis' });
+      return res.status(400).json({
+        error: 'classeId, matiereId, periode et notes[] sont requis',
+      });
     }
     if (!periodeValide(periode)) {
-      return res.status(400).json({ error: `periode doit être entre ${PERIODE_MIN} et ${PERIODE_MAX}` });
+      return res.status(400).json({
+        error: `periode doit être entre ${PERIODE_MIN} et ${PERIODE_MAX}`,
+      });
     }
 
     const classe = await prisma.classe.findFirst({
@@ -88,14 +149,22 @@ async function enregistrerLot(req, res, next) {
     });
     if (!matiere) return res.status(404).json({ error: 'Matière introuvable' });
 
-    const autorise = await enseignantEnseigneCetteMatiereDansCetteClasse(req, classeId, matiereId);
+    const autorise = await enseignantEnseigneCetteMatiereDansCetteClasse(
+      req,
+      classeId,
+      matiereId
+    );
     if (!autorise) {
-      return res.status(403).json({ error: "Vous n'êtes pas assigné à cette matière dans cette classe" });
+      return res.status(403).json({
+        error: "Vous n'êtes pas assigné à cette matière dans cette classe",
+      });
     }
 
     for (const n of notes) {
       if (typeof n.valeur !== 'number' || n.valeur < 0 || n.valeur > 20) {
-        return res.status(400).json({ error: `Note invalide pour l'élève ${n.eleveId} : doit être entre 0 et 20` });
+        return res.status(400).json({
+          error: `Note invalide pour l'élève ${n.eleveId} : doit être entre 0 et 20`,
+        });
       }
     }
 
@@ -107,30 +176,49 @@ async function enregistrerLot(req, res, next) {
     const idsValides = new Set(inscriptionsValides.map((i) => i.eleveId));
     const idsInvalides = eleveIds.filter((id) => !idsValides.has(id));
     if (idsInvalides.length > 0) {
-      return res.status(400).json({ error: `Élève(s) non inscrit(s) dans cette classe : ${idsInvalides.join(', ')}` });
+      return res.status(400).json({
+        error: `Élève(s) non inscrit(s) dans cette classe : ${idsInvalides.join(', ')}`,
+      });
     }
 
     const resultats = await prisma.$transaction(
       notes.map((n) =>
         prisma.note.upsert({
           where: {
-            eleveId_matiereId_periode: { eleveId: n.eleveId, matiereId, periode: Number(periode) },
+            eleveId_matiereId_periode: {
+              eleveId: n.eleveId,
+              matiereId,
+              periode: Number(periode),
+            },
           },
           update: { valeur: n.valeur, date: new Date() },
-          create: { eleveId: n.eleveId, matiereId, periode: Number(periode), valeur: n.valeur },
+          create: {
+            eleveId: n.eleveId,
+            matiereId,
+            periode: Number(periode),
+            valeur: n.valeur,
+          },
         })
       )
     );
-        // Audit
-    const { enregistrerAudit } = require('../services/audit.service');
-    await enregistrerAudit({
-      etablissementId: req.user.etablissementId,
-      utilisateurId: req.user.id,
-      action: 'SAISIE_NOTES',
-      entite: 'Note',
-      details: { nombre: notes?.length || presences?.length || 0, classeId: req.body.classeId, periode: req.body.periode },
-      ip: req.ip,
-    });
+
+    try {
+      const { enregistrerAudit } = require('../services/audit.service');
+      await enregistrerAudit({
+        etablissementId: req.user.etablissementId,
+        utilisateurId: req.user.id,
+        action: 'SAISIE_NOTES',
+        entite: 'Note',
+        details: {
+          nombre: notes.length,
+          classeId,
+          periode: Number(periode),
+        },
+        ip: req.ip,
+      });
+    } catch (_) {
+      /* audit non bloquant */
+    }
 
     res.json({ enregistrees: resultats.length, notes: resultats });
   } catch (err) {
@@ -187,17 +275,27 @@ async function creerReclamation(req, res, next) {
   try {
     const { eleveId, matiereId, periode, motif } = req.body;
     if (!eleveId || !matiereId || !periode || !motif?.trim()) {
-      return res.status(400).json({ error: 'eleveId, matiereId, periode et motif sont requis' });
+      return res.status(400).json({
+        error: 'eleveId, matiereId, periode et motif sont requis',
+      });
     }
     if (!periodeValide(periode)) {
-      return res.status(400).json({ error: `periode doit être entre ${PERIODE_MIN} et ${PERIODE_MAX}` });
+      return res.status(400).json({
+        error: `periode doit être entre ${PERIODE_MIN} et ${PERIODE_MAX}`,
+      });
     }
 
     const [eleve, matiere] = await Promise.all([
-      prisma.eleve.findFirst({ where: { id: eleveId, etablissementId: req.user.etablissementId } }),
-      prisma.matiere.findFirst({ where: { id: matiereId, etablissementId: req.user.etablissementId } }),
+      prisma.eleve.findFirst({
+        where: { id: eleveId, etablissementId: req.user.etablissementId },
+      }),
+      prisma.matiere.findFirst({
+        where: { id: matiereId, etablissementId: req.user.etablissementId },
+      }),
     ]);
-    if (!eleve || !matiere) return res.status(404).json({ error: 'Élève ou matière introuvable' });
+    if (!eleve || !matiere) {
+      return res.status(404).json({ error: 'Élève ou matière introuvable' });
+    }
 
     const reclamation = await prisma.reclamationNote.create({
       data: {
@@ -222,7 +320,9 @@ async function creerReclamation(req, res, next) {
 async function traiterReclamation(req, res, next) {
   try {
     if (!['ADMIN', 'DIRECTEUR', 'SECRETAIRE'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Seuls les responsables peuvent traiter une réclamation' });
+      return res.status(403).json({
+        error: 'Seuls les responsables peuvent traiter une réclamation',
+      });
     }
     const { statut, reponse } = req.body;
     const statutsAutorises = ['OUVERTE', 'EN_COURS', 'TRAITEE', 'REJETEE'];
@@ -250,6 +350,7 @@ async function traiterReclamation(req, res, next) {
 }
 
 module.exports = {
+  listerMatieresParNiveau,
   listerPourSaisie,
   enregistrerLot,
   listerParEleve,

@@ -21,6 +21,8 @@ import RouteProtegee from './components/RouteProtegee';
 import JournalActivite from './pages/JournalActivite';
 import Certificats from './pages/Certificats';
 import Discipline from './pages/Discipline';
+import Salaires from './pages/Salaires';
+import Utilisateurs from './pages/Utilisateurs';
 
 export default function App() {
   return (
@@ -54,6 +56,8 @@ export default function App() {
           <Route path="/journal" element={<JournalActivite />} />
           <Route path="/certificats" element={<Certificats />} />
           <Route path="/discipline" element={<Discipline />} />
+          <Route path="/salaires" element={<Salaires />} />
+          <Route path="/utilisateurs" element={<Utilisateurs />} />
         </Route>
       </Routes>
     </BrowserRouter>
